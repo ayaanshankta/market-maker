@@ -15,16 +15,21 @@ from recorder import DATA, KRAKEN_DEPTH, KRAKEN_PRICE_DP, apply, kraken_checksum
 QUIET_GAP_S = 5  # BTC-USD always has book traffic; silence longer than this means we weren't recording
 
 
-def load(path, day):
+COLS = ["recv_ns", "conn_id", "seq", "is_snapshot", "side", "price", "qty", "checksum"]
+
+
+def load(path, day, columns=COLS):
     d = ds.dataset(path, format="parquet", partitioning="hive")
+    # Only the columns we need: faster, and skips tz-aware timestamps (which need tzdata on Windows).
     # Arrow's sort is stable, so rows within a message keep their original order.
-    return d.to_table(filter=(ds.field("date") == day) if day else None).sort_by([("recv_ns", "ascending")])
+    t = d.to_table(columns=columns, filter=(ds.field("date") == day) if day else None)
+    return t.sort_by([("recv_ns", "ascending")])
 
 
 def check(venue, sym, day):
     book = load(DATA / venue / sym / "book", day).to_pydict()
     n = len(book["recv_ns"])
-    print(f"\n== {venue} {sym}: book rows {n:,}  trade rows {load(DATA / venue / sym / 'trades', day).num_rows:,}")
+    print(f"\n== {venue} {sym}: book rows {n:,}  trade rows {load(DATA / venue / sym / 'trades', day, ['recv_ns']).num_rows:,}")
 
     bids, asks = SortedDict(), SortedDict()
     conn = last_ns = None
