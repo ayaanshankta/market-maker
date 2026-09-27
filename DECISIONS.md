@@ -36,3 +36,14 @@ Every choice, bug, surprise and dead end. This is the interview material.
   alarm on healthy data. Fix: the recorder reconnects at 00:00 UTC, so every day starts with a snapshot
   and is self-contained for the backtester too (~1 s/day cost). check.py now skips and reports any
   rows it has no snapshot for, instead of failing on them.
+
+## 2026-09-27 — Phase 2 groundwork
+
+- **Coinbase can re-send a snapshot mid-connection** (ETH-USD, 14:32:48 UTC, no reconnect). Any
+  snapshot must reset the book. replay() already does this.
+- **A mid-day hour can't be rebuilt on its own**: its snapshot is at connection start. Samples for
+  development come from hour 00 (right after the daily rollover).
+- **Top-of-book is materialised once per day** (`tob.py`, one row per change in the top 5 levels):
+  replaying the raw book costs minutes per day, so EDA and the backtester read `derived/` instead.
+- First look, Coinbase ETH-USD (28 min): spread is 1 tick ($0.01) at the median but $0.21 at p90.
+  It widens often, which matters for when quoting is worthwhile.
