@@ -7,7 +7,7 @@ Run:  python check.py                (all data)
 import sys
 from pathlib import Path
 
-import pyarrow.dataset as ds
+import pyarrow.parquet as pq
 from sortedcontainers import SortedDict  # O(log n) best bid/ask; a plain dict max() is too slow at full depth
 
 from recorder import DATA, KRAKEN_DEPTH, KRAKEN_PRICE_DP, apply, kraken_checksum, truncate
@@ -18,42 +18,45 @@ QUIET_GAP_S = 5  # BTC-USD always has book traffic; silence longer than this mea
 COLS = ["recv_ns", "conn_id", "seq", "is_snapshot", "side", "price", "qty", "checksum"]
 
 
-def load(path, day, columns=COLS):
-    d = ds.dataset(path, format="parquet", partitioning="hive")
-    # Only the columns we need: faster, and skips tz-aware timestamps (which need tzdata on Windows).
-    # Arrow's sort is stable, so rows within a message keep their original order.
-    t = d.to_table(columns=columns, filter=(ds.field("date") == day) if day else None)
-    return t.sort_by([("recv_ns", "ascending")])
+def files(venue, sym, kind, day):
+    # Each file is one flush, written in arrival order, and a message never spans two files.
+    # Sorting by name (first recv_ns) gives chronological order without loading everything.
+    return sorted((DATA / venue / sym / kind).glob(f"date={day or '*'}/hour=*/*.parquet"), key=lambda f: int(f.stem))
 
 
 def check(venue, sym, day):
-    book = load(DATA / venue / sym / "book", day).to_pydict()
-    n = len(book["recv_ns"])
-    print(f"\n== {venue} {sym}: book rows {n:,}  trade rows {load(DATA / venue / sym / 'trades', day, ['recv_ns']).num_rows:,}")
-
+    # Streams one file at a time: memory stays at one 60 s flush, not a whole day (~15 GB as pydict).
     bids, asks = SortedDict(), SortedDict()
-    conn = last_ns = None
-    crossed = checked = bad = 0
-    quiet = []
-    for i in range(n):
-        c, s, t = book["conn_id"][i], book["seq"][i], book["recv_ns"][i]
-        if c != conn or (book["is_snapshot"][i] and (i == 0 or book["seq"][i - 1] != s)):
-            conn = c  # new connection or new snapshot -> book restarts
-            bids.clear(); asks.clear()
-        if last_ns and (t - last_ns) / 1e9 > QUIET_GAP_S:
-            quiet.append((last_ns, t))
-        apply(bids if book["side"][i] == "bid" else asks, book["price"][i], book["qty"][i])
-        last_ns = t
-        if i + 1 < n and book["seq"][i + 1] == s and book["conn_id"][i + 1] == c:
-            continue  # checks run once per message, after its last row
-        if book["checksum"][i] is not None:
-            truncate(bids, asks, KRAKEN_DEPTH)
-            checked += 1
-            bad += kraken_checksum(bids, asks, KRAKEN_PRICE_DP[sym]) != book["checksum"][i]
-        if bids and asks and bids.peekitem(-1)[0] >= asks.peekitem(0)[0]:
-            crossed += 1
+    conn = last_ns = prev_seq = None
+    n = crossed = checked = bad = 0
+    conns, quiet = set(), []
+    for f in files(venue, sym, "book", day):
+        # Only the columns we need: skips tz-aware timestamps (which need tzdata on Windows).
+        book = pq.read_table(f, columns=COLS).to_pydict()
+        m = len(book["recv_ns"])
+        n += m
+        conns.update(book["conn_id"])
+        for i in range(m):
+            c, s, t = book["conn_id"][i], book["seq"][i], book["recv_ns"][i]
+            if c != conn or (book["is_snapshot"][i] and prev_seq != s):
+                conn = c  # new connection or new snapshot -> book restarts
+                bids.clear(); asks.clear()
+            if last_ns and (t - last_ns) / 1e9 > QUIET_GAP_S:
+                quiet.append((last_ns, t))
+            apply(bids if book["side"][i] == "bid" else asks, book["price"][i], book["qty"][i])
+            last_ns, prev_seq = t, s
+            if i + 1 < m and book["seq"][i + 1] == s and book["conn_id"][i + 1] == c:
+                continue  # checks run once per message, after its last row
+            if book["checksum"][i] is not None:
+                truncate(bids, asks, KRAKEN_DEPTH)
+                checked += 1
+                bad += kraken_checksum(bids, asks, KRAKEN_PRICE_DP[sym]) != book["checksum"][i]
+            if bids and asks and bids.peekitem(-1)[0] >= asks.peekitem(0)[0]:
+                crossed += 1
 
-    print(f"connections {len(set(book['conn_id']))}  crossed-book messages {crossed}")
+    trades = sum(pq.read_metadata(f).num_rows for f in files(venue, sym, "trades", day))
+    print(f"\n== {venue} {sym}: book rows {n:,}  trade rows {trades:,}")
+    print(f"connections {len(conns)}  crossed-book messages {crossed}")
     if checked:
         print(f"checksums matched {checked - bad:,}/{checked:,}")
     print(f"recording gaps > {QUIET_GAP_S}s: {len(quiet)}")
