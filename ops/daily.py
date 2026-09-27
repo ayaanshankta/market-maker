@@ -7,6 +7,8 @@ import logging, re, shutil, subprocess, sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pyarrow.parquet as pq
+
 REPO = Path(r"C:\projects\market-maker")
 WT = Path(r"C:\projects\market-maker-desktop")
 DATA = REPO / "data"
@@ -62,8 +64,11 @@ def check(day, alerts):
             n = int(re.search(r"recording gaps > 5s: (\d+)", block).group(1))
             secs = sum(map(int, re.findall(r"\((\d+)s\)", block)))
             gaps[m.group(1)] = (n, secs, n > 20)
+    unverified = re.findall(r"UNVERIFIED rows ([\d,]+)", out)
     if r.returncode != 0:
         alerts.append(f"check.py rc {r.returncode}")
+    if unverified and day > FIRST_DAY:  # with the 00:00 UTC rollover every day should be fully seeded
+        alerts.append(f"UNVERIFIED rows {sum(num(u) for u in unverified):,}")
     if not sections:
         alerts.append("no data for day")
     for v, (n, secs, partial) in gaps.items():
@@ -71,7 +76,52 @@ def check(day, alerts):
             alerts.append(f"{v} downtime {'>=' if partial else ''}{secs} s over {n} gaps")
     g = ", ".join(f"{v} {n} ({'>=' if p else ''}{s} s)" for v, (n, s, p) in sorted(gaps.items()))
     return (f"rows {book + trades:,} (book {book:,}, trades {trades:,}) | gaps>5s: {g or 'n/a'} | "
-            f"checksums {ok:,}/{tot:,} | crossed {crossed} | check rc {r.returncode}")
+            f"checksums {ok:,}/{tot:,} | crossed {crossed} | "
+            f"unverified {sum(num(u) for u in unverified):,} | check rc {r.returncode}")
+
+
+def reconnects(day, alerts):
+    # recorder.log timestamps are local time; the day is UTC. One "daily UTC rollover" per venue is expected.
+    rollovers, other = {}, []
+    for line in (REPO / "recorder.log").read_text(errors="replace").splitlines():
+        m = re.match(r"(\S+ \S+),\d+ WARNING (\w+): disconnected: (.*)", line)
+        if not m or str(datetime.strptime(m[1], "%Y-%m-%d %H:%M:%S").astimezone(timezone.utc).date()) != day:
+            continue
+        if "daily UTC rollover" in m[3]:
+            rollovers[m[2]] = rollovers.get(m[2], 0) + 1
+        else:
+            other.append(f"{m[2]} {m[3][:80]}")
+    s = f"rollovers {', '.join(f'{v} {n}' for v, n in sorted(rollovers.items())) or 0} | other disconnects {len(other)}"
+    return s + (f" ({'; '.join(other[:5])}{' ...' if len(other) > 5 else ''})" if other else "")
+
+
+def rollover_start(day, alerts):
+    # The day must open on a fresh connection: each book's first row is a snapshot, and the
+    # switch from yesterday's last row to today's first is short (per venue, BTC-USD book).
+    if day <= FIRST_DAY:
+        return "rollover n/a"
+    prev = str(datetime.strptime(day, "%Y-%m-%d").date() - timedelta(days=1))
+    first = lambda d, v, s: sorted((DATA / v / s / "book").glob(f"date={d}/hour=*/*.parquet"), key=lambda f: int(f.stem))
+    not_snap, gaps = [], []
+    for sec in sorted(p for p in DATA.glob("*/*") if p.is_dir()):
+        v, s = sec.parent.name, sec.name
+        files = first(day, v, s)
+        if not files:
+            continue
+        t = pq.read_table(files[0], columns=["recv_ns", "is_snapshot"])
+        if not t["is_snapshot"][0].as_py():
+            not_snap.append(f"{v} {s}")
+        if s == "BTC-USD":
+            before = first(prev, v, s)
+            if before:
+                last = max(pq.read_table(before[-1], columns=["recv_ns"])["recv_ns"].to_pylist())
+                gap = (min(t["recv_ns"].to_pylist()) - last) / 1e9
+                gaps.append(f"{v} {gap:.2f} s")
+                if gap > 2:
+                    alerts.append(f"{v} rollover gap {gap:.1f} s")
+    if not_snap:
+        alerts.append(f"day starts without snapshot: {', '.join(not_snap)}")
+    return f"rollover gap {', '.join(gaps) or 'n/a'}, first rows snapshot: {'NO ' + ', '.join(not_snap) if not_snap else 'all'}"
 
 
 def disk(day, alerts):
@@ -120,8 +170,10 @@ def main():
             (REPO / f"ALERT-{day}.txt").write_text(f"ALERT ({'; '.join(alerts)}) | {day} | {b}\n")
         return
     c = check(day, alerts)
+    r = reconnects(day, alerts)
+    ro = rollover_start(day, alerts)
     d = disk(day, alerts)
-    line = f"{day} | {c} | {d} | {b}"
+    line = f"{day} | {c} | {r} | {ro} | {d} | {b}"
     if alerts:
         line = f"ALERT ({'; '.join(alerts)}) | {line}"
     log.info("health: %s", line)
