@@ -20,3 +20,19 @@ Every choice, bug, surprise and dead end. This is the interview material.
   float64 because 8-dp quantities fit in float64 exactly after formatting.
 - **Two timestamps per row**: exchange event time + local `recv_ns`. Needed for latency modelling.
 - **Runs on the always-on Windows desktop**, not the laptop (sleep = gaps).
+
+## 2026-09-26 — Running on the desktop
+
+- **Live data on C: (internal NVMe, NTFS), daily backup to D: (external USB, exFAT).** D: first
+  looked like the obvious home (1.3 TB free), but exFAT has no journal and USB can drop out.
+  Cutover gap: 1.03 s.
+- **Measured rate: 0.55 GB/day** (Saturday evening; weekdays likely higher). The 75 s smoke test
+  suggested 1.55 GB/day. A short sample over-extrapolated.
+- **First hour: 447,142/447,142 Kraken checksums matched, 0 crossed books, 0 reconnects.**
+- **check.py streams file by file.** The whole-day `to_pydict()` version would have needed ~15 GB
+  RAM on a shared machine. Streaming peaks at 84 MiB.
+- **Bug (caught by the desktop session): checking one day started from an empty book.** Unless the
+  day began with a reconnect, the book was wrong and Kraken checksums failed (7,523/9,441), a false
+  alarm on healthy data. Fix: the recorder reconnects at 00:00 UTC, so every day starts with a snapshot
+  and is self-contained for the backtester too (~1 s/day cost). check.py now skips and reports any
+  rows it has no snapshot for, instead of failing on them.

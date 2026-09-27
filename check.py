@@ -28,7 +28,8 @@ def check(venue, sym, day):
     # Streams one file at a time: memory stays at one 60 s flush, not a whole day (~15 GB as pydict).
     bids, asks = SortedDict(), SortedDict()
     conn = last_ns = prev_seq = None
-    n = crossed = checked = bad = 0
+    n = crossed = checked = bad = unseeded = 0
+    seeded = False
     conns, quiet = set(), []
     for f in files(venue, sym, "book", day):
         # Only the columns we need: skips tz-aware timestamps (which need tzdata on Windows).
@@ -41,10 +42,15 @@ def check(venue, sym, day):
             if c != conn or (book["is_snapshot"][i] and prev_seq != s):
                 conn = c  # new connection or new snapshot -> book restarts
                 bids.clear(); asks.clear()
+                # A connection that began before this day's files has no snapshot here: skip it rather than fail.
+                seeded = book["is_snapshot"][i]
             if last_ns and (t - last_ns) / 1e9 > QUIET_GAP_S:
                 quiet.append((last_ns, t))
             apply(bids if book["side"][i] == "bid" else asks, book["price"][i], book["qty"][i])
             last_ns, prev_seq = t, s
+            if not seeded:
+                unseeded += 1
+                continue
             if i + 1 < m and book["seq"][i + 1] == s and book["conn_id"][i + 1] == c:
                 continue  # checks run once per message, after its last row
             if book["checksum"][i] is not None:
@@ -57,6 +63,8 @@ def check(venue, sym, day):
     trades = sum(pq.read_metadata(f).num_rows for f in files(venue, sym, "trades", day))
     print(f"\n== {venue} {sym}: book rows {n:,}  trade rows {trades:,}")
     print(f"connections {len(conns)}  crossed-book messages {crossed}")
+    if unseeded:
+        print(f"UNVERIFIED rows {unseeded:,} (connection began before this day, no snapshot to start from)")
     if checked:
         print(f"checksums matched {checked - bad:,}/{checked:,}")
     print(f"recording gaps > {QUIET_GAP_S}s: {len(quiet)}")

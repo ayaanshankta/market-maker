@@ -43,6 +43,17 @@ class Resync(Exception):
     """Our book can no longer be trusted; reconnect for a fresh snapshot."""
 
 
+def utc_day(ns):
+    return ns // 86_400_000_000_000
+
+
+def rollover(recv_ns, conn_id):
+    # Reconnect at 00:00 UTC so every date= partition starts with a snapshot and can be
+    # checked/backtested on its own. Costs ~1 s of data per day.
+    if utc_day(recv_ns) != utc_day(conn_id):
+        raise Resync("daily UTC rollover")
+
+
 def flush():
     for (venue, sym, kind), rows in buf.items():
         if not rows:
@@ -89,6 +100,7 @@ async def coinbase(conn_id):
         last_seq = -1
         async for raw in ws:
             recv_ns = time.time_ns()  # local receive time, before parsing
+            rollover(recv_ns, conn_id)
             msg = json.loads(raw)
             if msg.get("type") == "error":
                 raise Resync(msg)
@@ -119,6 +131,7 @@ async def kraken(conn_id):
         seq = 0  # Kraken has no sequence numbers; we number messages ourselves. The checksum catches gaps.
         async for raw in ws:
             recv_ns = time.time_ns()
+            rollover(recv_ns, conn_id)
             msg = json.loads(raw, parse_float=Decimal)  # exact decimals, or the checksum strings come out wrong
             if msg.get("success") is False or "error" in msg:
                 raise Resync(msg)
@@ -153,10 +166,11 @@ async def forever(venue, fn):
             await fn(conn_id)
         except (OSError, websockets.WebSocketException, Resync, asyncio.TimeoutError) as e:
             log.warning("%s: disconnected: %r", venue, e)
+        flush()  # never let one file mix two connections (keeps the day's first file starting at its snapshot)
         if time.monotonic() - started > 60:
-            backoff = 1  # it was a healthy connection; retry fast
+            backoff = 0  # healthy connection (incl. daily rollover): reconnect immediately
         await asyncio.sleep(backoff)
-        backoff = min(backoff * 2, 60)
+        backoff = min(max(backoff * 2, 1), 60)
 
 
 async def flusher():
