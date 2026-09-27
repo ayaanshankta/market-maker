@@ -1,4 +1,4 @@
-﻿"""Keep recorder.py running; stop it gracefully (Ctrl-C -> flush) when a STOP file appears.
+"""Keep recorder.py running; stop it gracefully (Ctrl-C -> flush) when a STOP file appears.
 
 Launched with pythonw.exe by the Windows scheduled task "market-maker-recorder" (at logon + every
 5 min; a second copy exits at once because of the lock).  Stop: create STOP in the repo dir.
@@ -7,7 +7,7 @@ Start: delete STOP, then Start-ScheduledTask market-maker-recorder (or wait <= 5
 import ctypes, logging, msvcrt, os, signal, subprocess, time
 from pathlib import Path
 
-REPO = Path(r"D:\projects\market-maker")
+REPO = Path(r"C:\projects\market-maker")
 PY = REPO / ".venv" / "Scripts" / "python.exe"
 STOP = REPO / "STOP"
 LOCK = REPO / "supervisor.lock"

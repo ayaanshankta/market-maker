@@ -42,9 +42,9 @@
   </Triggers>
   <Actions Context="Author">
     <Exec>
-      <Command>D:\projects\market-maker\.venv\Scripts\pythonw.exe</Command>
-      <Arguments>"D:\projects\market-maker-desktop\ops\supervise.py"</Arguments>
-      <WorkingDirectory>D:\projects\market-maker</WorkingDirectory>
+      <Command>C:\projects\market-maker\.venv\Scripts\pythonw.exe</Command>
+      <Arguments>"C:\projects\market-maker-desktop\ops\supervise.py"</Arguments>
+      <WorkingDirectory>C:\projects\market-maker</WorkingDirectory>
     </Exec>
   </Actions>
 </Task>
