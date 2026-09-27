@@ -164,10 +164,17 @@ def main():
     alerts = []
     b = "backup skipped (dry run)" if dry else backup(alerts)
     log.info("%s", b)
-    if day < FIRST_DAY:
-        log.info("%s is before first recording day %s; no check", day, FIRST_DAY)
+    if day < FIRST_DAY:  # expected, not an ALERT (only a backup problem is)
+        line = f"{day} | no data: before recording started ({FIRST_DAY}) | {b}"
         if alerts:
-            (REPO / f"ALERT-{day}.txt").write_text(f"ALERT ({'; '.join(alerts)}) | {day} | {b}\n")
+            line = f"ALERT ({'; '.join(alerts)}) | {line}"
+        log.info("health: %s", line)
+        if dry:
+            print(line)
+            return
+        publish(line, day, alerts)
+        if alerts:
+            (REPO / f"ALERT-{day}.txt").write_text(line + "\n")
         return
     c = check(day, alerts)
     r = reconnects(day, alerts)
