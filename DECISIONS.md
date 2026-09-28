@@ -54,3 +54,19 @@ Every choice, bug, surprise and dead end. This is the interview material.
   snapshots within ~2 s, the old socket was the problem.
 - **Kraken drops the connection ~4x/day** (ConnectionClosedError, 2026-09-27); Coinbase 0. Each
   drop is a few seconds of Kraken data. Tracked in the daily health line.
+
+## 2026-09-28 — Phase 2 first look (1 hour: 00:00–01:00 UTC, a quiet Sunday evening; indicative only)
+
+- **Order flow imbalance explains ~23–46% of same-second mid moves (R², 1 s buckets)**, matching
+  Cont–Kukanov–Stoikov's range, but only **0.3–3% of the NEXT second**. Most of what OFI "explains"
+  happens at the same time as the move. A market maker needs the predictive number, not the headline one.
+- **Top-of-book imbalance vs the next 1 s mid move: corr 0.13–0.30** (Kraken BTC highest). At a
+  1-tick spread part of this is mechanical: the thin side empties and the mid ticks. Still usable for
+  quote skew, since that mechanical move is exactly the adverse selection a quote suffers.
+- **Micro-price beats mid only weakly** (corr 0.04–0.14), weaker than raw imbalance here.
+- **SOL spread: 2 ticks at the median (1.64 bps), 1 tick only 46–48% of the time**, so there's more room
+  to quote inside the spread than BTC (1 tick 81–98% of the time).
+- **Coinbase BTC trades are dust-dominated**: median taker event $0.19 vs ~$50 on Kraken. Trade-count
+  signals on Coinbase BTC need a size filter.
+- Pandas trap caught in review: `df.size` is the element count, not the `size` column (it produced
+  "$8.7B median trade").
