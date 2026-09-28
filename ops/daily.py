@@ -1,7 +1,9 @@
-"""Daily 06:00 job: back up new data to D:, check yesterday (UTC), append one line to coord/recorder-health.md.
+"""Daily 06:00 job: back up new data to D:, check yesterday (UTC), then (if the check passed) tob.py + eda.py,
+back up derived/, and commit one line to coord/recorder-health.md plus reports/eda-<day>* on branch desktop.
 
 Run by the scheduled task "market-maker-daily" with pythonw.  Optional arg: a UTC day (YYYY-MM-DD).
 Anything alert-worthy gets an "ALERT" prefix in the health line plus a flag file ALERT-<day>.txt in the repo.
+An eda/tob failure is only noted ("eda FAILED"); failing two days running is an ALERT.
 """
 import logging, re, shutil, subprocess, sys
 from datetime import datetime, timedelta, timezone
@@ -13,6 +15,8 @@ REPO = Path(r"C:\projects\market-maker")
 WT = Path(r"C:\projects\market-maker-desktop")
 DATA = REPO / "data"
 BACKUP = Path(r"D:\market-maker-backup\data")
+DERIVED, BACKUP_DERIVED = REPO / "derived", Path(r"D:\market-maker-backup\derived")
+REPORTS, WT_REPORTS = REPO / "reports", WT / "reports"
 HEALTH = WT / "coord" / "recorder-health.md"
 PY = REPO / ".venv" / "Scripts" / "python.exe"
 FIRST_DAY = "2026-09-27"  # first UTC day with data
@@ -29,16 +33,16 @@ def run(args, **kw):
     return r
 
 
-def backup(alerts):
+def backup(alerts, src=DATA, dst=BACKUP, what="backup"):
     if not Path("D:/").exists():
-        alerts.append("backup: D: missing (unplugged?)")
-        return "backup SKIPPED (D: missing)"
+        alerts.append(f"{what}: D: missing (unplugged?)")
+        return f"{what} SKIPPED (D: missing)"
     # /E /XO only: never /MIR or /PURGE -- the backup must never delete anything.
-    r = run(["robocopy", str(DATA), str(BACKUP), "/E", "/XO", "/R:2", "/W:5", "/NP", "/NFL", "/NDL",
+    r = run(["robocopy", str(src), str(dst), "/E", "/XO", "/R:2", "/W:5", "/NP", "/NFL", "/NDL",
              f"/LOG+:{REPO / 'backup.log'}"])
     if r.returncode >= 8:
-        alerts.append(f"backup: robocopy rc {r.returncode}")
-    return f"backup rc {r.returncode}"
+        alerts.append(f"{what}: robocopy rc {r.returncode}")
+    return f"{what} rc {r.returncode}"
 
 
 def day_bytes(day):
@@ -77,7 +81,38 @@ def check(day, alerts):
     g = ", ".join(f"{v} {n} ({'>=' if p else ''}{s} s)" for v, (n, s, p) in sorted(gaps.items()))
     return (f"rows {book + trades:,} (book {book:,}, trades {trades:,}) | gaps>5s: {g or 'n/a'} | "
             f"checksums {ok:,}/{tot:,} | crossed {crossed} | "
-            f"unverified {sum(num(u) for u in unverified):,} | check rc {r.returncode}")
+            f"unverified {sum(num(u) for u in unverified):,} | check rc {r.returncode}"), \
+        r.returncode == 0 and bool(sections)
+
+
+def failed_yesterday(day):
+    prev = str(datetime.strptime(day, "%Y-%m-%d").date() - timedelta(days=1))
+    if not HEALTH.exists():
+        return False
+    return any(re.search(rf"(^- |\| ){prev} \|", l) and "eda FAILED" in l for l in HEALTH.read_text().splitlines())
+
+
+def phase2(day, check_ok, alerts):
+    # tob.py then eda.py, BelowNormal, each wrapped by ops/peakrun.py for runtime + peak memory in daily.log.
+    if not check_ok:
+        return "eda skipped (check failed)"
+    for script in ("tob.py", "eda.py"):
+        r = run([str(PY), str(WT / "ops" / "peakrun.py"), script, day], cwd=REPO)
+        stats = re.search(r"PEAKRUN .*", r.stderr)
+        log.info("%s", stats[0] if stats else f"{script}: no PEAKRUN stats")
+        log.info("%s stdout:\n%s", script, r.stdout)
+        if r.returncode != 0:
+            log.info("%s stderr:\n%s", script, r.stderr)
+            tail = [l for l in r.stderr.splitlines() if l.strip() and not l.startswith("PEAKRUN")]
+            reason = f"{script} rc {r.returncode}: {tail[-1][:120] if tail else 'no stderr'}"
+            if failed_yesterday(day):
+                alerts.append(f"eda failed 2 days running ({reason})")
+            return f"eda FAILED: {reason}"
+    WT_REPORTS.mkdir(exist_ok=True)
+    reports = sorted(REPORTS.glob(f"eda-{day}*"))
+    for f in reports:
+        shutil.copy2(f, WT_REPORTS / f.name)
+    return f"eda ok ({len(reports)} report files) | {backup(alerts, DERIVED, BACKUP_DERIVED, 'derived backup')}"
 
 
 def reconnects(day, alerts):
@@ -148,6 +183,8 @@ def publish(line, day, alerts):
     with HEALTH.open("a") as f:
         f.write(f"- {line}\n")
     git("add", str(HEALTH))
+    if list(WT_REPORTS.glob(f"eda-{day}*")):
+        git("add", str(WT_REPORTS))
     git("commit", "-q", "-m", f"health: {day}{' ALERT' if alerts else ''}")
     if git("push", "-q", "origin", "desktop").returncode != 0:
         git("pull", "-q", "--rebase", "origin", "desktop")
@@ -176,11 +213,12 @@ def main():
         if alerts:
             (REPO / f"ALERT-{day}.txt").write_text(line + "\n")
         return
-    c = check(day, alerts)
+    c, check_ok = check(day, alerts)
     r = reconnects(day, alerts)
     ro = rollover_start(day, alerts)
+    e = "eda skipped (dry run)" if dry else phase2(day, check_ok, alerts)
     d = disk(day, alerts)
-    line = f"{day} | {c} | {r} | {ro} | {d} | {b}"
+    line = f"{day} | {c} | {r} | {ro} | {e} | {d} | {b}"
     if alerts:
         line = f"ALERT ({'; '.join(alerts)}) | {line}"
     log.info("health: %s", line)
