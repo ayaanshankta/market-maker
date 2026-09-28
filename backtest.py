@@ -132,6 +132,73 @@ class Touch:
                 ASK: asks.peekitem(0)[0] if inv > -self.max_inv else None}
 
 
+class AvellanedaStoikov:
+    """Avellaneda & Stoikov (2008) with a rolling horizon (crypto never closes).
+
+    reservation r = mid - inv * gamma * var * tau        (skew away from inventory)
+    half-spread   = gamma * var * tau / 2 + ln(1 + gamma / k) / gamma
+    var is an EWMA of squared 1 s mid changes ($^2/s); k comes from calibrate_k().
+    Quotes are rounded outward to the tick and never cross the book. Quotes at the touch until
+    volatility has warmed up.
+    """
+
+    def __init__(self, size, max_inv, gamma, k, tau_s=60.0, tick=0.01, halflife_s=300.0, warmup_s=60):
+        self.size, self.max_inv, self.gamma, self.k, self.tau = size, max_inv, gamma, k, tau_s
+        self.tick, self.dp = tick, max(0, -int(np.floor(np.log10(tick) + 1e-9)))
+        self.alpha = 1 - 0.5 ** (1 / halflife_s)
+        self.var = self.sec = self.sec_mid = self.start = None
+        self.warmup = warmup_s
+
+    def _vol(self, t, mid):
+        sec = t // 10**9
+        if self.sec is None:
+            self.sec, self.sec_mid, self.start = sec, mid, sec
+        elif sec > self.sec:  # once per new second: squared change since the last one, spread over the gap
+            dv = (mid - self.sec_mid) ** 2 / (sec - self.sec)
+            self.var = dv if self.var is None else self.var + self.alpha * (dv - self.var)
+            self.sec, self.sec_mid = sec, mid
+
+    def __call__(self, t, bids, asks, inv):
+        bb, ba = bids.peekitem(-1)[0], asks.peekitem(0)[0]
+        mid = (bb + ba) / 2
+        self._vol(t, mid)
+        if self.var is None or self.sec - self.start < self.warmup:
+            bid, ask = bb, ba
+        else:
+            r = mid - inv * self.gamma * self.var * self.tau
+            half = self.gamma * self.var * self.tau / 2 + np.log1p(self.gamma / self.k) / self.gamma
+            bid = min(np.floor((r - half) / self.tick + 1e-9) * self.tick, ba - self.tick)
+            ask = max(np.ceil((r + half) / self.tick - 1e-9) * self.tick, bb + self.tick)
+        # Round to the price grid so the price matches the book's keys exactly.
+        return {BID: round(bid, self.dp) if inv < self.max_inv else None,
+                ASK: round(ask, self.dp) if inv > -self.max_inv else None}
+
+
+def calibrate_k(venue, sym, day, min_count=20):
+    """Fit lambda(delta) = A exp(-k delta): rate of trades printing at least delta from the mid.
+
+    Standard A-S calibration proxy for how fill intensity decays with quote distance.
+    Returns (A per second, k per $, tick).
+    """
+    import pandas as pd
+    from tob import OUT
+    tob = pd.read_parquet(OUT / venue / sym / "tob" / f"date={day}.parquet")
+    tt, mid = tob.recv_ns.values, ((tob.bid_px + tob.ask_px) / 2).values
+    tick = (tob.ask_px - tob.bid_px)[lambda x: x > 0].min()
+    px, tr_t = [], []
+    for t, _, (p, _) in trade_events(venue, sym, day):
+        tr_t.append(t); px.append(p)
+    i = np.searchsorted(tt, np.array(tr_t), side="right") - 1
+    ok = i >= 0
+    d = np.abs(np.array(px)[ok] - mid[i[ok]])
+    T = (tt[-1] - tt[0]) / 1e9
+    deltas = np.arange(1, 40) * tick / 2  # half-tick grid
+    lam = np.array([(d >= x - 1e-9).sum() for x in deltas])
+    use = lam >= min_count
+    slope, intercept = np.polyfit(deltas[use], np.log(lam[use] / T), 1)
+    return float(np.exp(intercept)), float(-slope), float(round(tick, 10))
+
+
 def trade_events(venue, sym, day):
     for f in files(venue, sym, "trades", day):
         d = pq.read_table(f, columns=["recv_ns", "is_snapshot", "price", "size"]).to_pydict()
@@ -173,31 +240,38 @@ def summary(sim):
     return out
 
 
-def main(day, venue, sym, size=1.0, max_inv=5.0, latency_ms=50):
+def main(day, venue, sym, size=1.0, max_inv=5.0, latency_ms=50, gamma=3.0, calib_day=None):
+    """Touch quoter under both fill models, then Avellaneda-Stoikov under the queue model.
+    k is calibrated on `calib_day` (default: the same day, i.e. IN-SAMPLE; say so when reporting)."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
+    A, k, tick = calibrate_k(venue, sym, calib_day or day)
+    print(f"k calibration on {calib_day or day}{' (IN-SAMPLE)' if not calib_day else ''}: "
+          f"A={A:.3f}/s k={k:.1f}/$ tick={tick}")
+    runs = {"touch_naive": (Touch(size, max_inv), False), "touch_queue": (Touch(size, max_inv), True),
+            "as_queue": (AvellanedaStoikov(size, max_inv, float(gamma), k, tick=tick), True)}
     rows, fig = {}, plt.figure(figsize=(7, 3.5))
-    for name, queue in (("naive", False), ("queue", True)):
-        sim = run(Sim(Touch(size, max_inv), queue=queue, latency_ns=latency_ms * 10**6), venue, sym, day)
+    for name, (strat, queue) in runs.items():
+        sim = run(Sim(strat, queue=queue, latency_ns=int(latency_ms) * 10**6), venue, sym, day)
         rows[name] = summary(sim)
         hrs = (np.array(sim.t_hist) - sim.t_hist[0]) / 3.6e12
-        plt.plot(hrs, sim.pnl_hist, label=f"{name} fills")
+        plt.plot(hrs, sim.pnl_hist, label=name)
     plt.axhline(0, color="k", lw=.5)
     plt.gca().set(xlabel="hours", ylabel="PnL (USD, marked to mid)",
-                  title=f"Touch quoter {venue} {sym} {day}: size {size}, max inv {max_inv}, {latency_ms} ms")
+                  title=f"{venue} {sym} {day}: size {size}, max inv {max_inv}, {latency_ms} ms, gamma {gamma}")
     plt.legend()
     plt.tight_layout()
     REPORTS.mkdir(exist_ok=True)
     png = REPORTS / f"backtest-{day}-{venue}-{sym}.png"
     fig.savefig(png, dpi=120)
-    print(f"{'':22}{'naive':>14}{'queue':>14}")
-    for k in rows["naive"]:
-        print(f"{k:22}{rows['naive'][k]:14.4f}{rows['queue'][k]:14.4f}")
+    print(f"{'':22}" + "".join(f"{n:>14}" for n in rows))
+    for key in rows["touch_naive"]:
+        print(f"{key:22}" + "".join(f"{rows[n][key]:14.4f}" for n in rows))
     print(f"\nwrote {png}")
     return rows
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:4])
+    main(*sys.argv[1:4], **dict(a.split("=", 1) for a in sys.argv[4:]))  # e.g. gamma=5 calib_day=2026-09-27

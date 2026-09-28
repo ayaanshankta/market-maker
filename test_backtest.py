@@ -78,4 +78,23 @@ s.on_book(11 * MS, *book(1.0))            # cancel reaches exchange at 21 ms
 s.on_trade(15 * MS, 100.0, 1.0)           # old order still live: fills
 assert abs(s.inv - 1.0) < 1e-12
 
+# Avellaneda-Stoikov: skews away from inventory, rounds outward to the tick, never crosses, respects limits.
+from backtest import AvellanedaStoikov
+S = 10**9
+def warm(inv):
+    a = AvellanedaStoikov(size=1, max_inv=5, gamma=3.0, k=50.0, tick=0.01, warmup_s=2)
+    bids, asks = SortedDict({100.00: 1.0}), SortedDict({100.02: 1.0})
+    for i in range(5):  # mid alternates by 1 tick each second -> nonzero variance
+        bids, asks = (SortedDict({100.00 + .01 * (i % 2): 1.0}), SortedDict({100.02 + .01 * (i % 2): 1.0}))
+        q = a(i * S, bids, asks, inv)
+    return a, q, bids, asks
+a, flat, bids, asks = warm(0)
+assert a.var > 0
+assert flat[BID] < flat[ASK] and flat[BID] <= asks.peekitem(0)[0] - 0.01 + 1e-9
+assert round(flat[BID], 2) == flat[BID] and round(flat[ASK], 2) == flat[ASK]
+_, long_, _, _ = warm(4)      # long inventory -> both quotes shift down (sell more eagerly)
+assert long_[BID] <= flat[BID] and long_[ASK] <= flat[ASK] and (long_[BID], long_[ASK]) != (flat[BID], flat[ASK])
+_, at_max, _, _ = warm(5)     # at the limit: no more bids
+assert at_max[BID] is None and at_max[ASK] is not None
+
 print("ALL BACKTEST TESTS PASS")
