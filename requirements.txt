@@ -2,3 +2,6 @@ websockets
 pyarrow
 sortedcontainers
 tzdata
+numpy
+pandas
+matplotlib

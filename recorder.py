@@ -173,7 +173,13 @@ async def forever(venue, fn):
             # midnight, so waiting for the first post-midnight message cost a 12 s gap.
             await asyncio.wait_for(fn(conn_id), (midnight - time.time_ns()) / 1e9)
         except (OSError, websockets.WebSocketException, Resync, asyncio.TimeoutError) as e:
-            if time.time_ns() >= midnight:
+            left = midnight - time.time_ns()
+            if isinstance(e, asyncio.TimeoutError) and 0 < left < 60e9:
+                # wait_for runs on the monotonic clock, midnight on the wall clock; if clock sync
+                # slewed them apart the timer fires a little early. Finish the wait so it's one rollover.
+                await asyncio.sleep(left / 1e9)
+                left = 0
+            if left <= 0:
                 e = Resync("daily UTC rollover")
             log.warning("%s: disconnected: %r", venue, e)
         flush()  # never let one file mix two connections (keeps the day's first file starting at its snapshot)
