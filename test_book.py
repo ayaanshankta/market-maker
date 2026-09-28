@@ -38,6 +38,23 @@ try:
 except recorder.Resync:
     pass
 
+# forever() rolls over on a timer even when the feed is silent
+import asyncio, logging
+async def silent(conn_id):
+    await asyncio.sleep(3600)
+msgs = []
+logging.getLogger("recorder").addHandler(type("H", (logging.Handler,), {"emit": lambda self, r: msgs.append(r.getMessage())})())
+logging.getLogger("recorder").setLevel(logging.INFO)
+recorder.next_midnight_ns = lambda ns: ns + 200_000_000  # "midnight" 0.2 s after connecting
+async def run():
+    try:
+        await asyncio.wait_for(recorder.forever("x", silent), 0.5)
+    except asyncio.TimeoutError:
+        pass
+asyncio.run(run())
+assert sum("daily UTC rollover" in m for m in msgs) == 2, msgs  # 0.2 s and 0.4 s, no backoff sleep
+assert sum("connecting" in m for m in msgs) == 3, msgs
+
 # Coinbase: snapshot in one file, update in a later file, 12 s recording gap
 write("coinbase", "BTC-USD", 2_000, [row(2_000, 0, True, "bid", 100.0, 1.0), row(2_000, 0, True, "ask", 101.0, 1.0)])
 write("coinbase", "BTC-USD", 12_000_002_000, [row(12_000_002_000, 5, False, "bid", 100.5, 2.0)])

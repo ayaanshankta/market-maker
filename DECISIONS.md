@@ -47,3 +47,10 @@ Every choice, bug, surprise and dead end. This is the interview material.
   replaying the raw book costs minutes per day, so EDA and the backtester read `derived/` instead.
 - First look, Coinbase ETH-USD (28 min): spread is 1 tick ($0.01) at the median but $0.21 at p90.
   It widens often, which matters for when quoting is worthwhile.
+- **First rollover (2026-09-28): Coinbase gap 1.5 s, Kraken 12.1 s.** The rollover fired on the
+  first message after midnight, and Kraken sent nothing for 10 s. Fix: forever() forces the
+  reconnect on a timer at 00:00:00 UTC; the per-message check stays as a guard. Cause of the 10 s
+  of silence is unknown (Kraken-side or ours). The timer shows which: if the new connection
+  snapshots within ~2 s, the old socket was the problem.
+- **Kraken drops the connection ~4x/day** (ConnectionClosedError, 2026-09-27); Coinbase 0. Each
+  drop is a few seconds of Kraken data. Tracked in the daily health line.

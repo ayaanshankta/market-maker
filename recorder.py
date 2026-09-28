@@ -49,9 +49,14 @@ def utc_day(ns):
 
 def rollover(recv_ns, conn_id):
     # Reconnect at 00:00 UTC so every date= partition starts with a snapshot and can be
-    # checked/backtested on its own. Costs ~1 s of data per day.
+    # checked/backtested on its own. Costs ~1 s of data per day. forever() also forces this on a
+    # timer; this per-message guard only catches a message that lands after midnight first.
     if utc_day(recv_ns) != utc_day(conn_id):
         raise Resync("daily UTC rollover")
+
+
+def next_midnight_ns(ns):
+    return (utc_day(ns) + 1) * 86_400_000_000_000
 
 
 def flush():
@@ -161,14 +166,19 @@ async def forever(venue, fn):
     backoff = 1
     while True:
         started, conn_id = time.monotonic(), time.time_ns()
+        midnight = next_midnight_ns(conn_id)
         log.info("%s: connecting conn_id=%d", venue, conn_id)
         try:
-            await fn(conn_id)
+            # Timer, not traffic, triggers the rollover: on 2026-09-28 Kraken sent nothing for 10 s after
+            # midnight, so waiting for the first post-midnight message cost a 12 s gap.
+            await asyncio.wait_for(fn(conn_id), (midnight - time.time_ns()) / 1e9)
         except (OSError, websockets.WebSocketException, Resync, asyncio.TimeoutError) as e:
+            if time.time_ns() >= midnight:
+                e = Resync("daily UTC rollover")
             log.warning("%s: disconnected: %r", venue, e)
         flush()  # never let one file mix two connections (keeps the day's first file starting at its snapshot)
-        if time.monotonic() - started > 60:
-            backoff = 0  # healthy connection (incl. daily rollover): reconnect immediately
+        if time.monotonic() - started > 60 or time.time_ns() >= midnight:
+            backoff = 0  # healthy connection or daily rollover: reconnect immediately
         await asyncio.sleep(backoff)
         backoff = min(max(backoff * 2, 1), 60)
 
