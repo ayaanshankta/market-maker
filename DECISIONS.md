@@ -70,3 +70,15 @@ Every choice, bug, surprise and dead end. This is the interview material.
   signals on Coinbase BTC need a size filter.
 - Pandas trap caught in review: `df.size` is the element count, not the `size` column (it produced
   "$8.7B median trade").
+
+## 2026-09-28 — First full day (2026-09-27 UTC, 23.4 h) supersedes the 1-hour look
+
+- Integrity: **15,500,031/15,500,031 Kraken checksums**, 0 crossed, 0 gaps > 5 s over 51M book rows.
+- **SOL median spread is 1 tick (0.82 bps) over the full day**; the "2 ticks" in the 1-hour sample was
+  a quiet-evening effect. The spread is 1 tick 52% (Coinbase) / 86% (Kraken) of the time. One hour
+  wasn't representative, which is why the daily runs matter.
+- **Book imbalance → next-1 s mid: corr 0.08–0.19** (Kraken BTC 0.19 best). **OFI next-1 s R² ≤ 1.6%**
+  while same-second R² is 8–44%. The full day confirms the gap between the two.
+- **Coinbase BTC median taker event = $0.015** (~1.8e-7 BTC): the trade tape is dust-dominated.
+- Process lesson (desktop): `cmd /c start /wait /b` always returns exit code 0, so exit codes are
+  only evidence when the process is launched directly.

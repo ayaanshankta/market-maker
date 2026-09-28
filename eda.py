@@ -113,6 +113,8 @@ def main(day):
             r, g = analyse(p.parent.name, p.name, day)
             rows.append(r)
             pics.append(plot_obi(g, p.parent.name, p.name, day))
+    if not rows:
+        sys.exit(f"no derived/*/*/tob/date={day}.parquet: run `python tob.py {day}` first")
     df = pd.DataFrame(rows).set_index(["venue", "sym"])
     out = REPORTS / f"eda-{day}.md"
     out.write_text(f"# EDA {day}\n\n100 ms clock grid; correlations are with the future mid change; "
