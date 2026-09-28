@@ -100,3 +100,16 @@ Every choice, bug, surprise and dead end. This is the interview material.
   after a fill. The touch quoter is the baseline to beat, not a strategy.
 - Known approximations: the book is our recorded view, not the exchange's; "mid at fill" is the last
   book seen, which is stale for through-fills (those show up as negative spread capture).
+
+## 2026-09-28 — Phase 4: Avellaneda–Stoikov (1806d2d)
+
+- Rolling horizon tau = 60 s (crypto never closes). var = EWMA (5 min half-life) of squared 1 s mid
+  changes. k fitted from how often trades print ≥ delta from the mid: lambda(delta) = A e^(−k delta).
+  Measured k ≈ 46/$ (Coinbase SOL, hour 00 of 09-28). Quotes rounded outward to the tick and
+  re-rounded to the price grid: a float like 121.58000000000001 would miss the book's 121.58 key and
+  silently join an "empty" level at the front of the queue.
+- **1 h, in-sample k, gamma 3, queue model: A-S −$0.78 vs touch −$31.43**, but on 197 fills vs 2,659.
+  Per dollar traded it's genuinely better (spread capture +0.99 vs −0.17 bps; 1 s markout −0.39 vs
+  −1.02 bps), so it isn't only trading less. Still slightly negative, and in-sample.
+- Protocol from here: **09-27 = calibration/tuning day (k, gamma), 09-28 = untouched test day.**
+- Test hygiene: removed an assert whose `or` made it impossible to fail.
