@@ -82,3 +82,21 @@ Every choice, bug, surprise and dead end. This is the interview material.
 - **Coinbase BTC median taker event = $0.015** (~1.8e-7 BTC): the trade tape is dust-dominated.
 - Process lesson (desktop): `cmd /c start /wait /b` always returns exit code 0, so exit codes are
   only evidence when the process is launched directly.
+
+## 2026-09-28 — Phase 3 backtester v1 (backtest.py)
+
+- Event-driven: raw book replay + trades merged by recv_ns (trades first on ties), 50 ms order/cancel
+  latency, cancel-replace loses queue position, orders become live on ANY event (a test caught
+  zero-latency orders being ignored until the next book update).
+- Queue model: join at the back; trades at our price eat the queue ahead first; unexplained level
+  shrinkage is cancels, taken from ahead of us pro rata (ahead / level). A trade through us, or the
+  other side crossing us, fills in full. Trade direction is inferred from price vs our quote, not
+  the feed's side field.
+- **First result (touch quoter, 1 SOL, max inv 5, 0 fees, 2026-09-28 00:00–01:00 UTC):** the queue
+  model fills ~20–25% less AND each fill is ~2x more toxic (1 s markout Coinbase −0.49 → −1.02 bps,
+  Kraken −0.39 → −0.88). You reach the front of the queue when the level is being consumed,
+  i.e. right before the price moves through you. Spread capture flips from +$7 to −$4 on Coinbase.
+- Both models lose even at 0 fees: SOL's half-spread (~0.4 bps) is smaller than the adverse move
+  after a fill. The touch quoter is the baseline to beat, not a strategy.
+- Known approximations: the book is our recorded view, not the exchange's; "mid at fill" is the last
+  book seen, which is stale for through-fills (those show up as negative spread capture).
