@@ -5,3 +5,4 @@ tzdata
 numpy
 pandas
 matplotlib
+tabulate
