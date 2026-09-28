@@ -55,6 +55,19 @@ asyncio.run(run())
 assert sum("daily UTC rollover" in m for m in msgs) == 2, msgs  # 0.2 s and 0.4 s, no backoff sleep
 assert sum("connecting" in m for m in msgs) == 3, msgs
 
+# forever() survives an unexpected exception: logs a traceback and reconnects
+async def broken(conn_id):
+    raise KeyError("malformed message")
+msgs.clear()
+recorder.next_midnight_ns = lambda ns: ns + 10**12
+async def run2():
+    try:
+        await asyncio.wait_for(recorder.forever("y", broken), 1.5)
+    except asyncio.TimeoutError:
+        pass
+asyncio.run(run2())
+assert sum("unexpected error" in m for m in msgs) >= 2, msgs  # retried after the 1 s backoff
+
 # Coinbase: snapshot in one file, update in a later file, 12 s recording gap
 write("coinbase", "BTC-USD", 2_000, [row(2_000, 0, True, "bid", 100.0, 1.0), row(2_000, 0, True, "ask", 101.0, 1.0)])
 write("coinbase", "BTC-USD", 12_000_002_000, [row(12_000_002_000, 5, False, "bid", 100.5, 2.0)])

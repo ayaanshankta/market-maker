@@ -172,7 +172,9 @@ async def forever(venue, fn):
             # Timer, not traffic, triggers the rollover: on 2026-09-28 Kraken sent nothing for 10 s after
             # midnight, so waiting for the first post-midnight message cost a 12 s gap.
             await asyncio.wait_for(fn(conn_id), (midnight - time.time_ns()) / 1e9)
-        except (OSError, websockets.WebSocketException, Resync, asyncio.TimeoutError) as e:
+        except Exception as e:  # anything unexpected (a malformed message, ...) must not kill both venues
+            if not isinstance(e, (OSError, websockets.WebSocketException, Resync, asyncio.TimeoutError)):
+                log.exception("%s: unexpected error, reconnecting", venue)
             left = midnight - time.time_ns()
             if isinstance(e, asyncio.TimeoutError) and 0 < left < 60e9:
                 # wait_for runs on the monotonic clock, midnight on the wall clock; if clock sync

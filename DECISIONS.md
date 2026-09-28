@@ -163,3 +163,12 @@ Every choice, bug, surprise and dead end. This is the interview material.
   `{gamma:g}` crashed AFTER the sims, so results would have been lost. The tests missed it because
   they never touch the CLI. Fix: every script casts all numeric kwargs once at the top of main().
   Lesson: a new code path (the CLI) needs its own smoke test before a long run depends on it.
+
+## 2026-09-28 — First real outages
+
+- 03:24:54 CDT: the recorder died (rc 1, no traceback), 1 s after an NVIDIA driver event. forever() only
+  caught network/resync errors, so ANY other exception killed both venues. Fix: catch Exception,
+  log the traceback, reconnect. The supervisor also discarded stderr; it now logs it (desktop-side fix).
+- 18:34–18:40 CDT: the desktop BSOD'd (0x119 VIDEO_SCHEDULER_INTERNAL_ERROR, GPU driver), 6.8 min
+  gap. The recorder came back only because someone logged in: the case for the "run without login"
+  task. Unflushed rows (up to 60 s) are lost in a crash by design.
