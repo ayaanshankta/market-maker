@@ -113,3 +113,17 @@ Every choice, bug, surprise and dead end. This is the interview material.
   −1.02 bps), so it isn't only trading less. Still slightly negative, and in-sample.
 - Protocol from here: **09-27 = calibration/tuning day (k, gamma), 09-28 = untouched test day.**
 - Test hygiene: removed an assert whose `or` made it impossible to fail.
+
+## 2026-09-28 — Phase 5: regimes + imbalance skew (regime.py)
+
+- Per-second book-only features (|mid move|, spread, |OFI|, top-of-book updates), produced by ONE
+  accumulator used for both HMM training and live quoting, so train and live can't drift apart.
+- HMM fit with hmmlearn (EM, diag Gaussian, K by BIC over 2–6). **Live quoting uses a hand-written
+  forward filter only.** hmmlearn's predict_proba is forward-backward (smoothed) and uses future
+  observations. Test: the filter equals hmmlearn exactly at the last step, and differs from smoothed by
+  >5% earlier, which is the lookahead we're avoiding.
+- Policy: P(toxic) > 0.5 → widen both quotes by `wide_ticks`; imbalance skew shifts both quotes by
+  round(obi_ticks · imbalance) ticks. Ablation: A-S / +skew / +HMM / +both, queue fills.
+- Dev run (1 h, in-sample, NOT a result): BIC hit the top of the old 2–4 range, so the range was
+  widened; the toxic state (largest mid moves, most updates) covers ~20% of the time.
+- Protocol: train k, gamma and the HMM on 2026-09-27; test once on 2026-09-28.
