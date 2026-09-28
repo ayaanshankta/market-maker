@@ -159,3 +159,7 @@ Every choice, bug, surprise and dead end. This is the interview material.
 - Also: max_inv is overshot (up to 7 on SOL) by fills landing during the 50 ms latency. size is in base
   units, so Kraken BTC quotes 1 BTC (~$84k), hence −$95k; BTC needs a notional-sized quote.
   PNG names now include gamma (the sweep had overwritten them), and the table columns are wider.
+- Bug (caught by the desktop, pre-run): `gamma=10` on the CLI arrived as a string, and the new PNG name
+  `{gamma:g}` crashed AFTER the sims, so results would have been lost. The tests missed it because
+  they never touch the CLI. Fix: every script casts all numeric kwargs once at the top of main().
+  Lesson: a new code path (the CLI) needs its own smoke test before a long run depends on it.
