@@ -139,3 +139,23 @@ Every choice, bug, surprise and dead end. This is the interview material.
   fees this doesn't work; the report will say so.
 - Floating-point lesson: rewriting x·a/e as x·(a/e) changed 1 fill of 197 (the queue landing exactly
   on 0). Compare runs with tolerances, and keep the arithmetic order fixed.
+
+## 2026-09-28 — Full tuning day (09-27) overturns the 1-hour look; protocol corrected BEFORE the test day
+
+- **A-S fills are MORE toxic over a full day, not less.** gamma 3, 1 s markout: Coinbase SOL A-S −0.90 vs
+  touch −0.75 bps; Kraken SOL −1.58 vs −0.78. Quoting away from the touch means you're only filled when
+  a sweep runs through your level, and sweeps are the most informed flow. The 1-hour "better per
+  dollar" result didn't hold.
+- **Every configuration loses on 09-27** (touch queue: −$193 Coinbase SOL, −$256 Kraken SOL; A-S
+  −$10 / −$7). Naive fills flatter the touch quoter: Coinbase SOL spread capture +$142 naive vs −$43 queue.
+- **"Pick gamma with the best PnL" was a broken rule**: when everything loses, PnL improves steadily as
+  fills fall, so it picks gamma = 30, the grid edge, with 62 fills on Kraken, i.e. the least trading.
+  Changed before any test-day number exists: **primary OOS config = gamma 3** (a mid-grid value fixed
+  now, not selected), and the whole gamma curve 0.5–30 is ALSO reported on 09-28 as-is, with nothing
+  picked from it. Question for the test day: does "less trading = less loss" hold out of sample, and
+  does anything beat not trading at all?
+- The takeaway so far: at a 1-tick spread with 50 ms latency, passive quoting on SOL has no edge by
+  itself. Any edge has to come from WHEN to quote (Phase 5: regime/imbalance), not where.
+- Also: max_inv is overshot (up to 7 on SOL) by fills landing during the 50 ms latency. size is in base
+  units, so Kraken BTC quotes 1 BTC (~$84k), hence −$95k; BTC needs a notional-sized quote.
+  PNG names now include gamma (the sweep had overwritten them), and the table columns are wider.

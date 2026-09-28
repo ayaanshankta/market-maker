@@ -269,11 +269,11 @@ def main(day, venue, sym, size=1.0, max_inv=5.0, latency_ms=50, gamma=3.0, calib
     plt.legend()
     plt.tight_layout()
     REPORTS.mkdir(exist_ok=True)
-    png = REPORTS / f"backtest-{day}-{venue}-{sym}.png"
+    png = REPORTS / f"backtest-{day}-{venue}-{sym}-g{gamma:g}.png"  # gamma in the name: sweeps must not overwrite
     fig.savefig(png, dpi=120)
-    print(f"{'':22}" + "".join(f"{n:>14}" for n in rows))
+    print(f"{'':22}" + "".join(f"{n:>18}" for n in rows))
     for key in rows["touch_naive"]:
-        print(f"{key:22}" + "".join(f"{rows[n][key]:14.4f}" for n in rows))
+        print(f"{key:22}" + "".join(f"{rows[n][key]:18,.4f}" for n in rows))
     print(f"\nwrote {png}")
     return rows
 
