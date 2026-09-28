@@ -15,6 +15,7 @@ VARIANTS = [("base", {}),
 
 
 def main(day, venue, sym, calib_day, gamma=3.0, size=1.0, max_inv=5.0):
+    size, max_inv, gamma = float(size), float(max_inv), float(gamma)  # CLI kwargs arrive as strings
     if calib_day == day:
         print("WARNING: calib_day == test day -> in-sample")
     _, k, tick = calibrate_k(venue, sym, calib_day)
@@ -22,7 +23,7 @@ def main(day, venue, sym, calib_day, gamma=3.0, size=1.0, max_inv=5.0):
     print(f"{'variant':28}{'pnl_usd':>10}{'fills':>8}{'spread_cap':>12}{'mko_1s_bps':>12}")
     for name, kw in VARIANTS:
         kw = {"latency_ns": 50_000_000, **kw}
-        r = summary(run(Sim(AvellanedaStoikov(size, max_inv, float(gamma), k, tick=tick), queue=True, **kw), venue, sym, day))
+        r = summary(run(Sim(AvellanedaStoikov(size, max_inv, gamma, k, tick=tick), queue=True, **kw), venue, sym, day))
         print(f"{name:28}{r['pnl_usd']:10.2f}{r['fills']:8.0f}{r['spread_capture_usd']:12.2f}{r['markout_1s_bps']:12.3f}")
 
 

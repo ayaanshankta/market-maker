@@ -252,14 +252,16 @@ def main(day, venue, sym, size=1.0, max_inv=5.0, latency_ms=50, gamma=3.0, calib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
+    # CLI kwargs arrive as strings: cast once here, not at each use.
+    size, max_inv, latency_ms, gamma = float(size), float(max_inv), int(latency_ms), float(gamma)
     A, k, tick = calibrate_k(venue, sym, calib_day or day)
     print(f"k calibration on {calib_day or day}{' (IN-SAMPLE)' if not calib_day else ''}: "
           f"A={A:.3f}/s k={k:.1f}/$ tick={tick}")
     runs = {"touch_naive": (Touch(size, max_inv), False), "touch_queue": (Touch(size, max_inv), True),
-            "as_queue": (AvellanedaStoikov(size, max_inv, float(gamma), k, tick=tick), True)}
+            "as_queue": (AvellanedaStoikov(size, max_inv, gamma, k, tick=tick), True)}
     rows, fig = {}, plt.figure(figsize=(7, 3.5))
     for name, (strat, queue) in runs.items():
-        sim = run(Sim(strat, queue=queue, latency_ns=int(latency_ms) * 10**6), venue, sym, day)
+        sim = run(Sim(strat, queue=queue, latency_ns=latency_ms * 10**6), venue, sym, day)
         rows[name] = summary(sim)
         hrs = (np.array(sim.t_hist) - sim.t_hist[0]) / 3.6e12
         plt.plot(hrs, sim.pnl_hist, label=name)

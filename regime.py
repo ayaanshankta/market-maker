@@ -134,7 +134,8 @@ class Regime:
 
 
 def main(train_day, test_day, venue, sym, gamma=3.0, obi_ticks=1.0, wide_ticks=2, size=1.0, max_inv=5.0):
-    gamma, obi_ticks, wide_ticks = float(gamma), float(obi_ticks), int(wide_ticks)
+    # CLI kwargs arrive as strings: cast every numeric one here.
+    gamma, obi_ticks, wide_ticks, size, max_inv = float(gamma), float(obi_ticks), int(wide_ticks), float(size), float(max_inv)
     _, k, tick = calibrate_k(venue, sym, train_day)
     print(f"train {train_day}: k={k:.1f}/$ tick={tick}; fitting HMM")
     model = fit(venue, sym, train_day, tick)
