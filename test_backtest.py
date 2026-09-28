@@ -97,4 +97,12 @@ assert long_[BID] <= flat[BID] and long_[ASK] <= flat[ASK] and (long_[BID], long
 _, at_max, _, _ = warm(5)     # at the limit: no more bids
 assert at_max[BID] is None and at_max[ASK] is not None
 
+# Cancel assumptions: get to ahead=4 in a level of 8, then 2 are cancelled -> 3 / 2 / 4 ahead.
+for mode, want in (("prorata", 3.0), ("front", 2.0), ("back", 4.0)):
+    s = Sim(Fixed(100.0), queue=True, latency_ns=0, cancels=mode)
+    s.on_book(0, *book(10.0)); s.on_book(1, *book(4.0)); s.on_book(2, *book(8.0))  # "back" reaches 4 via the level cap
+    assert abs(s.orders[0].ahead - 4.0) < 1e-12, (mode, s.orders[0].ahead)
+    s.on_book(3, *book(6.0))
+    assert abs(s.orders[0].ahead - want) < 1e-12, (mode, s.orders[0].ahead)
+
 print("ALL BACKTEST TESTS PASS")

@@ -127,3 +127,15 @@ Every choice, bug, surprise and dead end. This is the interview material.
 - Dev run (1 h, in-sample, NOT a result): BIC hit the top of the old 2–4 range, so the range was
   widened; the toxic state (largest mid moves, most updates) covers ~20% of the time.
 - Protocol: train k, gamma and the HMM on 2026-09-27; test once on 2026-09-28.
+
+## 2026-09-28 — Phase 6 harness (sensitivity.py)
+
+- Cancel assumption is now a knob: prorata (default) / front (all cancels ahead of us, optimistic) /
+  back (none ahead, pessimistic). The sensitivity runner varies one thing at a time: latency 0/100/250 ms,
+  fees 1/2.5 bps, cancels front/back.
+- Dev run (1 h, in-sample, NOT a result), Coinbase SOL A-S: PnL falls from −$0.78 to −$4.13 as latency
+  goes 50 → 250 ms (1 s markout −0.39 → −0.99 bps): slow quotes get picked off. Every 1 bps of fee
+  costs ~$1.9 on ~$19k notional, which is already larger than all the spread captured ($1.84). At retail
+  fees this doesn't work; the report will say so.
+- Floating-point lesson: rewriting x·a/e as x·(a/e) changed 1 fill of 197 (the queue landing exactly
+  on 0). Compare runs with tolerances, and keep the arithmetic order fixed.

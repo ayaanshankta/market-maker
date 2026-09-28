@@ -40,8 +40,12 @@ class Order:
 
 
 class Sim:
-    def __init__(self, strategy, queue=True, latency_ns=50_000_000, fee_bps=0.0):
+    def __init__(self, strategy, queue=True, latency_ns=50_000_000, fee_bps=0.0, cancels="prorata"):
+        # cancels: which share of unexplained level shrinkage was ahead of us.
+        #   "prorata" ahead/level (default) | "front" all of it (optimistic) | "back" none (pessimistic)
+        assert cancels in ("prorata", "front", "back"), cancels
         self.strategy, self.queue, self.lat, self.fee = strategy, queue, latency_ns, fee_bps / 1e4
+        self.cancels = cancels
         self.orders, self.fills = [], []
         self.cash = self.inv = 0.0
         self.mid = self.bids = self.asks = None
@@ -80,8 +84,9 @@ class Sim:
             if self.queue:
                 new = side_book.get(o.px, 0.0)
                 expected = o.level - o.traded
-                if expected > 0 and expected - new > 0:
-                    o.ahead -= (expected - new) * o.ahead / expected  # cancels, pro rata by position
+                if expected > 0 and expected - new > 0 and self.cancels != "back":
+                    gone = expected - new
+                    o.ahead -= gone if self.cancels == "front" else gone * o.ahead / expected  # pro rata by position
                 o.ahead = max(0.0, min(o.ahead, new))
                 o.level, o.traded = new, 0.0
         self.requote(t, bids, asks)
