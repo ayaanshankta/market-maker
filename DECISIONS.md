@@ -172,3 +172,8 @@ Every choice, bug, surprise and dead end. This is the interview material.
 - 18:34–18:40 CDT: the desktop BSOD'd (0x119 VIDEO_SCHEDULER_INTERNAL_ERROR, GPU driver), 6.8 min
   gap. The recorder came back only because someone logged in: the case for the "run without login"
   task. Unflushed rows (up to 60 s) are lost in a crash by design.
+- **Kraken's 12 s rollover gap, root-caused (desktop session, 2026-09-29):** Kraken data flows until
+  23:59:59.98, then Kraken stalls ~10 s at 00:00 UTC. The timer fired on time, but our close handshake
+  waited websockets' default close_timeout (10 s) before reconnecting. A control close outside midnight
+  takes 0.14 s. Fix: close_timeout=1. Next night shows whether a new connection gets served during the
+  stall (gap ~2–3 s) or Kraken is simply unavailable then (gap stays ~10 s → document it and accept it).

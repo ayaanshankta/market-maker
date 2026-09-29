@@ -98,8 +98,10 @@ def truncate(bids, asks, depth):
         asks.popitem(-1)
 
 
+# close_timeout=1: Kraken stalls ~10 s at 00:00 UTC and websockets' default 10 s close handshake
+# waited it out (2026-09-29: Kraken rollover gap 12.0 s vs Coinbase 1.6 s). Don't wait to say goodbye.
 async def coinbase(conn_id):
-    async with websockets.connect("wss://advanced-trade-ws.coinbase.com", max_size=None, ping_interval=20) as ws:
+    async with websockets.connect("wss://advanced-trade-ws.coinbase.com", max_size=None, ping_interval=20, close_timeout=1) as ws:
         for ch in ("level2", "market_trades", "heartbeats"):  # heartbeats keep the socket alive
             await ws.send(json.dumps({"type": "subscribe", "product_ids": SYMBOLS, "channel": ch}))
         last_seq = -1
@@ -128,7 +130,7 @@ async def coinbase(conn_id):
 
 
 async def kraken(conn_id):
-    async with websockets.connect("wss://ws.kraken.com/v2", max_size=None, ping_interval=20) as ws:
+    async with websockets.connect("wss://ws.kraken.com/v2", max_size=None, ping_interval=20, close_timeout=1) as ws:
         await ws.send(json.dumps({"method": "subscribe", "params": {
             "channel": "book", "symbol": [s.replace("-", "/") for s in SYMBOLS], "depth": KRAKEN_DEPTH}}))
         await ws.send(json.dumps({"method": "subscribe", "params": {"channel": "trade", "symbol": [s.replace("-", "/") for s in SYMBOLS]}}))
