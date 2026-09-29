@@ -204,6 +204,8 @@ async def main():
 
 
 if __name__ == "__main__":
+    import faulthandler
+    faulthandler.enable()  # native crashes (e.g. access violation) still print the Python stack to stderr
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
                         handlers=[logging.StreamHandler(), logging.FileHandler(Path(__file__).parent / "recorder.log")])
     signal.signal(signal.SIGTERM, signal.default_int_handler)  # `kill` flushes like Ctrl-C
