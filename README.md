@@ -50,10 +50,11 @@ Touch quoter, 1 SOL, full day 2026-09-27, 0 fees:
 With realistic queues you reach the front exactly when the level is being consumed, i.e. right before
 the price moves through you. Naive fills hide that adverse selection almost entirely.
 
-Avellaneda–Stoikov (k fitted from where trades print relative to the mid) loses far less, but only by
-trading less. Its fills are *more* toxic than the touch quoter's (1 s markout −0.90 vs −0.75 bps),
-because quotes away from the touch only get hit by sweeps. **At a 1-tick spread with 50 ms latency,
-passive quoting on SOL has no edge by itself.**
+Avellaneda–Stoikov (k fitted from where trades print relative to the mid) loses far less, mostly by
+trading less. Whether its fills are less toxic is **unresolved**: on 09-27 they were worse than the
+touch quoter's (1 s markout −0.90 vs −0.75 bps; quotes away from the touch only get hit by sweeps),
+while on 09-28 they were better (−0.38 vs −0.81). Two days disagree, so day-to-day noise dominates.
+**At a 1-tick spread with 50 ms latency, passive quoting on SOL has no edge by itself.**
 
 ## 4. Out of sample (tuned on 2026-09-27, tested once on 2026-09-28)
 
