@@ -1,5 +1,6 @@
-"""Daily 06:00 job: check yesterday (UTC), then (if the check passed) tob.py + eda.py, commit one line to
-coord/recorder-health.md plus reports/eda-<day>* on branch desktop, and only then back up data/ and derived/
+"""Daily 06:00 job: check yesterday (UTC), then (if the check passed) tob.py + eda.py and walkforward.py for both
+venues, commit one line to coord/recorder-health.md plus reports/ (eda-<day>*, walkforward.csv) on branch
+desktop, and only then back up data/ and derived/
 to D: (a slow external disk must not delay the check), committing the backup result as a follow-up line.
 
 Run by the scheduled task "market-maker-daily" with pythonw.  Optional arg: a UTC day (YYYY-MM-DD).
@@ -88,11 +89,41 @@ def check(day, alerts):
         r.returncode == 0 and bool(sections)
 
 
-def failed_yesterday(day):
+def failed_yesterday(day, marker):
     prev = str(datetime.strptime(day, "%Y-%m-%d").date() - timedelta(days=1))
     if not HEALTH.exists():
         return False
-    return any(re.search(rf"(^- |\| ){prev} \|", l) and "eda FAILED" in l for l in HEALTH.read_text().splitlines())
+    return any(re.search(rf"(^- |\| ){prev} \|", l) and marker in l for l in HEALTH.read_text().splitlines())
+
+
+def step(args, label, day, alerts):
+    """Run a repo script via ops/peakrun.py (BelowNormal; runtime + peak memory to daily.log).
+    Returns None on success, else '<label> FAILED: <reason>' (an ALERT only if it also failed yesterday)."""
+    r = run([str(PY), str(WT / "ops" / "peakrun.py"), *args], cwd=REPO)
+    stats = re.search(r"PEAKRUN .*", r.stderr)
+    log.info("%s", stats[0] if stats else f"{args[0]}: no PEAKRUN stats")
+    log.info("%s stdout:\n%s", " ".join(args), r.stdout)
+    if r.returncode == 0:
+        return None
+    log.info("%s stderr:\n%s", " ".join(args), r.stderr)
+    tail = [l for l in r.stderr.splitlines() if l.strip() and not l.startswith("PEAKRUN")]
+    reason = f"{' '.join(args)} rc {r.returncode}: {tail[-1][:120] if tail else 'no stderr'}"
+    if failed_yesterday(day, f"{label} FAILED"):
+        alerts.append(f"{label} failed 2 days running ({reason})")
+    return f"{label} FAILED: {reason}"
+
+
+def walkforward(day, check_ok, alerts):
+    # Train on day-1, test on day, 6 fixed configs; rows appended to reports/walkforward.csv (~30-40 min).
+    if not check_ok:
+        return "walkforward skipped (check failed)"
+    for venue in ("coinbase", "kraken"):
+        failed = step(["walkforward.py", day, venue, "SOL-USD"], "walkforward", day, alerts)
+        if failed:
+            return failed
+    WT_REPORTS.mkdir(exist_ok=True)
+    shutil.copy2(REPORTS / "walkforward.csv", WT_REPORTS / "walkforward.csv")
+    return "walkforward ok"
 
 
 def phase2(day, check_ok, alerts):
@@ -100,17 +131,9 @@ def phase2(day, check_ok, alerts):
     if not check_ok:
         return "eda skipped (check failed)"
     for script in ("tob.py", "eda.py"):
-        r = run([str(PY), str(WT / "ops" / "peakrun.py"), script, day], cwd=REPO)
-        stats = re.search(r"PEAKRUN .*", r.stderr)
-        log.info("%s", stats[0] if stats else f"{script}: no PEAKRUN stats")
-        log.info("%s stdout:\n%s", script, r.stdout)
-        if r.returncode != 0:
-            log.info("%s stderr:\n%s", script, r.stderr)
-            tail = [l for l in r.stderr.splitlines() if l.strip() and not l.startswith("PEAKRUN")]
-            reason = f"{script} rc {r.returncode}: {tail[-1][:120] if tail else 'no stderr'}"
-            if failed_yesterday(day):
-                alerts.append(f"eda failed 2 days running ({reason})")
-            return f"eda FAILED: {reason}"
+        failed = step([script, day], "eda", day, alerts)
+        if failed:
+            return failed
     WT_REPORTS.mkdir(exist_ok=True)
     reports = sorted(REPORTS.glob(f"eda-{day}*"))
     for f in reports:
@@ -186,7 +209,7 @@ def publish(line, day, alerts, what="health"):
     with HEALTH.open("a") as f:
         f.write(f"- {line}\n")
     git("add", str(HEALTH))
-    if list(WT_REPORTS.glob(f"eda-{day}*")):
+    if WT_REPORTS.exists():
         git("add", str(WT_REPORTS))
     git("commit", "-q", "-m", f"{what}: {day}{' ALERT' if alerts else ''}")
     if git("push", "-q", "origin", "desktop").returncode != 0:
@@ -211,8 +234,9 @@ def main():
         r = reconnects(day, alerts)
         ro = rollover_start(day, alerts)
         e = "eda skipped (dry run)" if dry else phase2(day, check_ok, alerts)
+        wf = "walkforward skipped (dry run)" if dry else walkforward(day, check_ok, alerts)
         d = disk(day, alerts)
-        line = f"{day} | {c} | {r} | {ro} | {e} | {d} | backup: next line"
+        line = f"{day} | {c} | {r} | {ro} | {e} | {wf} | {d} | backup: next line"
         if alerts:
             line = f"ALERT ({'; '.join(alerts)}) | {line}"
         log.info("health: %s", line)
