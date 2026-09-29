@@ -183,3 +183,32 @@ Every choice, bug, surprise and dead end. This is the interview material.
   rc 1 = taskkill's exit code, no Application Error/WER event. The supervisor recovered both times in
   ~10 s. Hardening: PIDS.txt with a DO-NOT-KILL header and the graceful-stop recipe. Lesson for any
   shared multi-agent machine: identify processes by command line and parent chain, never by image name.
+
+## 2026-09-29 — OUT-OF-SAMPLE test day 2026-09-28 (tuned on 09-27, run once, nothing selected)
+
+Integrity 09-28: 31,095,219/31,095,219 checksums, 0 crossed; ~9–10 min downtime/venue (BSOD 7.9 min,
+the 03:24 taskkill 73 s, a few reconnects). Primary config fixed a priori: A-S gamma 3, 50 ms, 0 fees, queue fills.
+
+| SOL-USD, 09-28 | touch (queue) | A-S gamma 3 |
+|---|---|---|
+| Coinbase PnL / notional | −$452.52 / $4.79M (−0.94 bps) | −$2.94 / $68k (−0.43 bps) |
+| Kraken PnL / notional | −$329.75 / $3.43M (−0.96 bps) | −$1.08 / $26k (−0.42 bps) |
+| 1 s markout (CB / KR) | −0.81 / −0.83 bps | −0.38 / −0.07 bps |
+
+- **No configuration is reliably profitable at 50 ms + 0 fees.** A-S loses about half as much per dollar.
+  Its markouts were better than the touch's on 09-28 but worse on 09-27. **Two days disagree, so
+  whether A-S's fills are "less toxic" is unresolved: day-to-day noise is larger than the effect.**
+- Gamma curve (reported, not selected): loss shrinks as gamma rises and fills fall (Coinbase gamma 30:
+  +$0.28 on 103 fills). "Trade less, lose less" held out of sample. Not an edge.
+- Ablation (A-S / +skew / +HMM / +both): skew +$0.73 (CB), +$0.59 (KR), the same sign on both venues,
+  weak evidence. HMM +$0.19 / −$1.11: no evidence. All differences are ~$1/day against $3–17/day of
+  inventory PnL noise, so none is significant on one day.
+- **Sensitivity is the clearest result.** Latency: 0 ms → Coinbase −$0.71, **Kraken +$2.33 (the
+  only positive number in the study)**; 250 ms → −$12 / −$14. Fees: 1 bps → Coinbase −$9.78; 2.5 bps → −$20.
+  Cancel assumption: front −$0.03 / back −$4.93 (CB). **Speed is the edge, and any fee removes it.**
+- Artifacts fixed after the test (future days only): (1) the HMM had a zero-variance "no activity" state
+  (all-zero rows) whose likelihood diverged, so BIC always took the largest K. Fix: tiny jitter +
+  min_covar, and K=3 fixed a priori (BIC stayed unstable across EM optima). (2) The simulator's history
+  is kept at 100 ms resolution (a Kraken day peaked at 2.6 GB). Fills/PnL are unchanged; markouts
+  shift ≤ 0.03 bps because the "t + h" mid can come from up to 100 ms later.
+- Next for real evidence: more test days (09-29 onward), then per-day confidence intervals, not single-day deltas.

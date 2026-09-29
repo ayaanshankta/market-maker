@@ -91,9 +91,13 @@ class Sim:
                 o.level, o.traded = new, 0.0
         self.requote(t, bids, asks)
         self.activate(t)  # zero latency: live at once
-        self.t_hist.append(t)
-        self.mid_hist.append(self.mid)
-        self.pnl_hist.append(self.cash + self.inv * self.mid)
+        # History at 100 ms resolution (last state per bucket): enough for 1/10/60 s markouts and plots,
+        # and caps memory at ~864k points/day instead of one per book event (2.6 GB on a busy Kraken day).
+        pnl = self.cash + self.inv * self.mid
+        if self.t_hist and t // 100_000_000 == self.t_hist[-1] // 100_000_000:
+            self.t_hist[-1], self.mid_hist[-1], self.pnl_hist[-1] = t, self.mid, pnl
+        else:
+            self.t_hist.append(t); self.mid_hist.append(self.mid); self.pnl_hist.append(pnl)
 
     def on_trade(self, t, px, size):
         if self.bids is None:

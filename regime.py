@@ -56,13 +56,17 @@ def training_rows(venue, sym, day, tick):
     return np.array(rows)
 
 
-def fit(venue, sym, day, tick, ks=(2, 3, 4, 5, 6), seed=0):
+def fit(venue, sym, day, tick, ks=(3,), seed=0):  # K=3 fixed a priori (calm/active/toxic); BIC was unstable
     """Gaussian HMM (diag cov); number of states by BIC. The 'toxic' state has the largest mean mid move."""
     from hmmlearn.hmm import GaussianHMM
     X = training_rows(venue, sym, day, tick)
+    # Seconds with no activity give identical all-zero rows. A state can then fit them with ~0 variance,
+    # the likelihood diverges and BIC keeps "improving" up to the largest K (seen on Kraken 09-27: K=6,
+    # one state exactly 0). Tiny jitter (far below any real feature step) keeps variances finite.
+    X = X + np.random.default_rng(seed).normal(0, 0.05, X.shape)
     best = None
     for k in ks:
-        m = GaussianHMM(n_components=k, covariance_type="diag", n_iter=200, random_state=seed).fit(X)
+        m = GaussianHMM(n_components=k, covariance_type="diag", n_iter=200, random_state=seed, min_covar=1e-2).fit(X)
         params = k * k - 1 + 2 * k * X.shape[1]  # transitions + start + means + variances
         bic = -2 * m.score(X) + params * np.log(len(X))
         print(f"  K={k}: BIC {bic:,.0f}  converged {m.monitor_.converged}")
