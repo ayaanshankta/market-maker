@@ -177,3 +177,9 @@ Every choice, bug, surprise and dead end. This is the interview material.
   waited websockets' default close_timeout (10 s) before reconnecting. A control close outside midnight
   takes 0.14 s. Fix: close_timeout=1. Next night shows whether a new connection gets served during the
   stall (gap ~2–3 s) or Kraken is simply unavailable then (gap stays ~10 s → document it and accept it).
+- **Root cause of both 09-28 recorder "crashes" (desktop forensics):** another Claude session on the same
+  PC (SCD molecular dynamics work) ran `taskkill /IM python.exe /F` (03:24, killed every Python), then later
+  killed PID 38724 thinking it was its own hung MD job (21:01); it was our recorder. Not a recorder bug:
+  rc 1 = taskkill's exit code, no Application Error/WER event. The supervisor recovered both times in
+  ~10 s. Hardening: PIDS.txt with a DO-NOT-KILL header and the graceful-stop recipe. Lesson for any
+  shared multi-agent machine: identify processes by command line and parent chain, never by image name.
