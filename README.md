@@ -4,9 +4,13 @@ Market-making research on real crypto order books: record the data, prove it's c
 quoting strategies with realistic queue-position fills, and find out honestly whether any of them
 have an edge.
 
-**Status (2026-09-28):** recording runs 24/7 (since 2026-09-26). Phases 1–6 are built and tested.
-The tuning day (2026-09-27) is analysed; the untouched test day (2026-09-28) runs next. Every
-decision, bug and dead end is in [DECISIONS.md](DECISIONS.md).
+**Status (2026-09-29):** recording runs 24/7 (since 2026-09-26). Phases 1–6 are built and tested.
+First out-of-sample day done; walk-forward (train D−1, test D) now runs daily. Every decision, bug
+and dead end is in [DECISIONS.md](DECISIONS.md).
+
+**Headline so far:** at a 1-tick spread with 50 ms latency and zero fees, no quoting strategy is reliably
+profitable on SOL. Naive fill models hide most of the adverse selection. **Latency is the lever:**
+at 0 ms one venue turns positive, at 250 ms both lose 4–12× more, and 1 bps of fees wipes out the rest.
 
 ## 1. Data you can trust
 
@@ -51,12 +55,30 @@ trading less. Its fills are *more* toxic than the touch quoter's (1 s markout �
 because quotes away from the touch only get hit by sweeps. **At a 1-tick spread with 50 ms latency,
 passive quoting on SOL has no edge by itself.**
 
-## 4. In progress
+## 4. Out of sample (tuned on 2026-09-27, tested once on 2026-09-28)
 
-- Test day 2026-09-28 (nothing tuned on it): A-S across gamma, the HMM-regime + imbalance-skew ablation,
-  and sensitivity to latency / fees / cancel assumptions.
-- The HMM is fit offline, but live quoting uses only a forward filter. hmmlearn's `predict_proba` is
-  smoothed (forward-backward) and would leak the future; `test_regime.py` demonstrates the difference.
+| SOL-USD, 09-28 | touch (queue fills) | Avellaneda–Stoikov, gamma 3 (fixed a priori) |
+|---|---|---|
+| Coinbase PnL / traded | −$452.52 / $4.79M (−0.94 bps) | −$2.94 / $68k (−0.43 bps) |
+| Kraken PnL / traded | −$329.75 / $3.43M (−0.96 bps) | −$1.08 / $26k (−0.42 bps) |
+
+Sensitivity of A-S on the test day (one knob at a time):
+
+| | Coinbase | Kraken |
+|---|---|---|
+| base (50 ms, 0 fee) | −$2.94 | −$1.08 |
+| 0 ms latency | −$0.71 | **+$2.33** |
+| 250 ms latency | −$12.01 | −$13.76 |
+| 1 bps fee | −$9.78 | −$3.66 |
+| cancels ahead of us / behind us | −$0.03 / −$4.93 | −$0.73 / −$1.13 |
+
+The imbalance skew helped on both venues (+$0.73, +$0.59) and the HMM regime filter was mixed.
+Every difference is ~$1/day against $3–17/day of inventory noise, so no single day can decide it.
+Walk-forward over many days (`walkforward.py summary`: mean ± 95% CI, paired vs A-S) is where that
+gets settled.
+
+The HMM is fit offline, but live quoting uses only a forward filter. hmmlearn's `predict_proba` is
+smoothed (forward-backward) and would leak the future; `test_regime.py` demonstrates the difference.
 
 ## Run
 ```
@@ -67,6 +89,7 @@ python tob.py 2026-09-27 && python eda.py 2026-09-27
 python backtest.py 2026-09-28 coinbase SOL-USD calib_day=2026-09-27 gamma=3
 python regime.py 2026-09-27 2026-09-28 coinbase SOL-USD gamma=3
 python sensitivity.py 2026-09-28 coinbase SOL-USD calib_day=2026-09-27 gamma=3
+python walkforward.py 2026-09-28 coinbase SOL-USD && python walkforward.py summary
 python test_book.py && python test_backtest.py && python test_regime.py
 ```
 Data lands in `data/{venue}/{symbol}/{book,trades}/date=.../hour=.../*.parquet` (gitignored).
