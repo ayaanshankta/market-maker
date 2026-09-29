@@ -19,6 +19,9 @@ from backtest import AvellanedaStoikov, Sim, Touch, calibrate_k, run, summary
 from regime import Regime, fit
 
 CSV = Path(__file__).parent / "reports" / "walkforward.csv"
+# The HMM spec (K=3, jitter, min_covar) was changed AFTER seeing 2026-09-28, so that day is not
+# out-of-sample for the HMM configs. summary() ignores earlier days for these.
+CLEAN_FROM = {"as+hmm": "2026-09-29", "as+both": "2026-09-29"}
 GAMMA, OBI_TICKS, WIDE_TICKS, SIZE, MAX_INV = 3.0, 1.0, 2, 1.0, 5.0
 FIELDS = ["test_day", "train_day", "venue", "sym", "config", "commit", "fills", "notional_usd", "pnl_usd",
           "spread_capture_usd", "inventory_pnl_usd", "markout_1s_bps", "markout_10s_bps", "markout_60s_bps"]
@@ -64,6 +67,11 @@ def ci95(x):
 def summarize():
     import pandas as pd
     d = pd.read_csv(CSV).drop_duplicates(["test_day", "venue", "sym", "config"], keep="last")
+    post_hoc = d.apply(lambda r: r.test_day < CLEAN_FROM.get(r.config, ""), axis=1)
+    if post_hoc.any():
+        print(f"excluded {post_hoc.sum()} post-hoc rows (config spec changed after seeing that day): "
+              + ", ".join(f"{c} before {day}" for c, day in CLEAN_FROM.items()))
+    d = d[~post_hoc]
     for (venue, sym), g in d.groupby(["venue", "sym"]):
         days = sorted(g.test_day.unique())
         print(f"\n== {venue} {sym}: {len(days)} test days ({days[0]} .. {days[-1]})")

@@ -212,3 +212,13 @@ the 03:24 taskkill 73 s, a few reconnects). Primary config fixed a priori: A-S g
   is kept at 100 ms resolution (a Kraken day peaked at 2.6 GB). Fills/PnL are unchanged; markouts
   shift ≤ 0.03 bps because the "t + h" mid can come from up to 100 ms later.
 - Next for real evidence: more test days (09-29 onward), then per-day confidence intervals, not single-day deltas.
+
+## 2026-09-29 — Walk-forward live; post-hoc guard
+
+- Walk-forward backfill for 09-28 reproduces the OOS run exactly for touch / as / as+skew / as@0ms
+  (PnL and fills identical). Peak memory 335–437 MiB (was 2.6 GB). It runs daily from 2026-09-30 06:00.
+- **Correction:** I said the 100 ms history shifts markouts by ≤ 0.03 bps. Kraken A-S moved 0.055 bps
+  (−0.065 → −0.010). Still small, but the bound I stated was wrong.
+- **09-28 is NOT out-of-sample for as+hmm / as+both**: the HMM spec (K=3, jitter, min_covar) was changed
+  after seeing that day. Tempting post-hoc result: as+both +$1.37 (CB) / +$1.73 (KR). summary() now
+  drops those rows (CLEAN_FROM = 2026-09-29), so they can't sneak into a mean later.
