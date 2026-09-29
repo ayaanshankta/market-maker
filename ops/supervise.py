@@ -13,7 +13,9 @@ import ctypes, logging, msvcrt, os, signal, subprocess, time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-REPO = Path(os.environ.get("MM_REPO", r"C:\projects\market-maker"))
+import pids
+
+REPO =Path(os.environ.get("MM_REPO", r"C:\projects\market-maker"))
 PY = Path(r"C:\projects\market-maker\.venv\Scripts\python.exe")
 STOP = REPO / "STOP"
 LOCK = REPO / "supervisor.lock"
@@ -75,6 +77,9 @@ def main():
         with open(REPO / "recorder.stderr.log", "a") as err:
             p = subprocess.Popen([str(PY), "recorder.py"], cwd=REPO, stdout=subprocess.DEVNULL, stderr=err)
         log.info("recorder started pid=%d", p.pid)
+        time.sleep(3)  # let the venv shim spawn the real interpreter so PIDS.txt can name it
+        pids.update(REPO, "supervisor + recorder", [f"updated {datetime.now():%Y-%m-%d %H:%M:%S}"]
+                    + pids.describe([os.getppid(), os.getpid(), p.pid]))
         next_check, watchdog_stopped = time.monotonic() + CHECK_S, False
         while p.poll() is None and not STOP.exists():
             time.sleep(1)
@@ -108,6 +113,7 @@ def main():
             if p.poll() is None:
                 log.info("STOP found; sending Ctrl-C to pid=%d", p.pid)
                 stop(p, 90)
+            pids.update(REPO, "supervisor + recorder", None)
             return
         if not watchdog_stopped:
             log.error("recorder exited unexpectedly rc=%s after %.0f s", p.returncode, time.monotonic() - started)

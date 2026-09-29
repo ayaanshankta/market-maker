@@ -1,15 +1,18 @@
-"""Daily 06:00 job: back up new data to D:, check yesterday (UTC), then (if the check passed) tob.py + eda.py,
-back up derived/, and commit one line to coord/recorder-health.md plus reports/eda-<day>* on branch desktop.
+"""Daily 06:00 job: check yesterday (UTC), then (if the check passed) tob.py + eda.py, commit one line to
+coord/recorder-health.md plus reports/eda-<day>* on branch desktop, and only then back up data/ and derived/
+to D: (a slow external disk must not delay the check), committing the backup result as a follow-up line.
 
 Run by the scheduled task "market-maker-daily" with pythonw.  Optional arg: a UTC day (YYYY-MM-DD).
 Anything alert-worthy gets an "ALERT" prefix in the health line plus a flag file ALERT-<day>.txt in the repo.
 An eda/tob failure is only noted ("eda FAILED"); failing two days running is an ALERT.
 """
-import logging, re, shutil, subprocess, sys
+import logging, os, re, shutil, subprocess, sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pyarrow.parquet as pq
+
+import pids
 
 REPO = Path(r"C:\projects\market-maker")
 WT = Path(r"C:\projects\market-maker-desktop")
@@ -112,7 +115,7 @@ def phase2(day, check_ok, alerts):
     reports = sorted(REPORTS.glob(f"eda-{day}*"))
     for f in reports:
         shutil.copy2(f, WT_REPORTS / f.name)
-    return f"eda ok ({len(reports)} report files) | {backup(alerts, DERIVED, BACKUP_DERIVED, 'derived backup')}"
+    return f"eda ok ({len(reports)} report files)"
 
 
 def reconnects(day, alerts):
@@ -175,7 +178,7 @@ def disk(day, alerts):
     return s
 
 
-def publish(line, day, alerts):
+def publish(line, day, alerts, what="health"):
     git = lambda *a: run(["git", "-C", str(WT), *a])
     HEALTH.parent.mkdir(exist_ok=True)
     if not HEALTH.exists():
@@ -185,7 +188,7 @@ def publish(line, day, alerts):
     git("add", str(HEALTH))
     if list(WT_REPORTS.glob(f"eda-{day}*")):
         git("add", str(WT_REPORTS))
-    git("commit", "-q", "-m", f"health: {day}{' ALERT' if alerts else ''}")
+    git("commit", "-q", "-m", f"{what}: {day}{' ALERT' if alerts else ''}")
     if git("push", "-q", "origin", "desktop").returncode != 0:
         git("pull", "-q", "--rebase", "origin", "desktop")
         if git("push", "-q", "origin", "desktop").returncode != 0:
@@ -199,10 +202,17 @@ def main():
     args = [a for a in sys.argv[1:] if a != "--dry-run"]
     day = args[0] if args else str((datetime.now(timezone.utc) - timedelta(days=1)).date())
     alerts = []
-    b = "backup skipped (dry run)" if dry else backup(alerts)
-    log.info("%s", b)
-    if day < FIRST_DAY:  # expected, not an ALERT (only a backup problem is)
-        line = f"{day} | no data: before recording started ({FIRST_DAY}) | {b}"
+    if not dry:
+        pids.update(REPO, "daily job", [f"updated {datetime.now():%Y-%m-%d %H:%M:%S}"]
+                    + pids.describe([os.getppid(), os.getpid()])
+                    + ["(plus short-lived children: check.py, tob.py, eda.py, robocopy, git)"])
+    try:
+        c, check_ok = check(day, alerts)
+        r = reconnects(day, alerts)
+        ro = rollover_start(day, alerts)
+        e = "eda skipped (dry run)" if dry else phase2(day, check_ok, alerts)
+        d = disk(day, alerts)
+        line = f"{day} | {c} | {r} | {ro} | {e} | {d} | backup: next line"
         if alerts:
             line = f"ALERT ({'; '.join(alerts)}) | {line}"
         log.info("health: %s", line)
@@ -212,22 +222,19 @@ def main():
         publish(line, day, alerts)
         if alerts:
             (REPO / f"ALERT-{day}.txt").write_text(line + "\n")
-        return
-    c, check_ok = check(day, alerts)
-    r = reconnects(day, alerts)
-    ro = rollover_start(day, alerts)
-    e = "eda skipped (dry run)" if dry else phase2(day, check_ok, alerts)
-    d = disk(day, alerts)
-    line = f"{day} | {c} | {r} | {ro} | {e} | {d} | {b}"
-    if alerts:
-        line = f"ALERT ({'; '.join(alerts)}) | {line}"
-    log.info("health: %s", line)
-    if dry:
-        print(line)
-        return
-    publish(line, day, alerts)
-    if alerts:
-        (REPO / f"ALERT-{day}.txt").write_text(line + "\n")
+        # Backups last: a slow external disk must never hold up the check or the analysis above.
+        balerts = []
+        b = backup(balerts)
+        bd = backup(balerts, DERIVED, BACKUP_DERIVED, "derived backup")
+        follow = f"{day} | {b} | {bd} | finished {datetime.now():%H:%M} local"
+        if balerts:
+            follow = f"ALERT ({'; '.join(balerts)}) | {follow}"
+            (REPO / f"ALERT-{day}-backup.txt").write_text(follow + "\n")
+        log.info("health: %s", follow)
+        publish(follow, day, balerts, "backup")
+    finally:
+        if not dry:
+            pids.update(REPO, "daily job", None)
 
 
 if __name__ == "__main__":
