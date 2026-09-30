@@ -26,6 +26,7 @@ PY = REPO / ".venv" / "Scripts" / "python.exe"
 FIRST_DAY = "2026-09-27"  # first UTC day with data
 DOWNTIME_ALERT_S = 30 * 60
 HEADROOM_ALERT_DAYS = 7
+ROLLOVER_GAP_ALERT_S = 5  # Kraken needs ~2.8 s at 00:00 UTC (1 s capped close + reconnect/snapshot); 12 s was the failure
 FLAGS = 0x00004000 | 0x08000000  # BELOW_NORMAL_PRIORITY_CLASS | CREATE_NO_WINDOW
 
 log = logging.getLogger("daily")
@@ -178,7 +179,7 @@ def rollover_start(day, alerts):
                 last = max(pq.read_table(before[-1], columns=["recv_ns"])["recv_ns"].to_pylist())
                 gap = (min(t["recv_ns"].to_pylist()) - last) / 1e9
                 gaps.append(f"{v} {gap:.2f} s")
-                if gap > 2:
+                if gap > ROLLOVER_GAP_ALERT_S:
                     alerts.append(f"{v} rollover gap {gap:.1f} s")
     if not_snap:
         alerts.append(f"day starts without snapshot: {', '.join(not_snap)}")
