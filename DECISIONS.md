@@ -222,3 +222,7 @@ the 03:24 taskkill 73 s, a few reconnects). Primary config fixed a priori: A-S g
 - **09-28 is NOT out-of-sample for as+hmm / as+both**: the HMM spec (K=3, jitter, min_covar) was changed
   after seeing that day. Tempting post-hoc result: as+both +$1.37 (CB) / +$1.73 (KR). summary() now
   drops those rows (CLEAN_FROM = 2026-09-29), so they can't sneak into a mean later.
+- **close_timeout=1 fixed the Kraken rollover (00:00 UTC 2026-09-30): 12.09 → 12.04 → 2.77 s.** A new
+  connection IS served during Kraken's ~10 s midnight stall; we'd been waiting out the close handshake.
+  Remaining 2.77 s ≈ 1.0 s capped close + 1.7 s reconnect/subscribe/snapshot. Coinbase: 1.24 s.
+  The rollover alert threshold rises from 2 s to 5 s (the ~1 s left isn't worth a connect-before-close rewrite).
