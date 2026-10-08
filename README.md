@@ -4,8 +4,8 @@ Market-making research on real crypto order books: record the data, prove it's c
 quoting strategies with realistic queue-position fills, and find out honestly whether any of them
 have an edge.
 
-**Status (2026-09-29):** recording runs 24/7 (since 2026-09-26). Phases 1–6 are built and tested.
-First out-of-sample day done; walk-forward (train D−1, test D) now runs daily. Every decision, bug
+**Status (2026-10-08):** recording runs 24/7 (since 2026-09-26). Phases 1–6 are built and tested.
+Walk-forward (train D−1, test D) runs daily; 9 out-of-sample days so far. Every decision, bug
 and dead end is in [DECISIONS.md](DECISIONS.md).
 
 **Headline so far:** at a 1-tick spread with 50 ms latency and zero fees, no quoting strategy is reliably
@@ -80,6 +80,19 @@ gets settled.
 
 The HMM is fit offline, but live quoting uses only a forward filter. hmmlearn's `predict_proba` is
 smoothed (forward-backward) and would leak the future; `test_regime.py` demonstrates the difference.
+
+## 5. Walk-forward: 9 out-of-sample days (train on D−1, test once on D)
+
+| SOL, mean PnL/day ± 95% CI | Coinbase | Kraken |
+|---|---|---|
+| Avellaneda–Stoikov, 50 ms | −$3.60 ± 2.49 | −$8.79 ± 5.87 |
+| + HMM regime widening (paired gain) | **+$1.47 ± 0.89** | **+$3.17 ± 2.16** |
+| + imbalance skew (paired gain) | +$0.08 ± 1.07 | +$0.61 ± 1.30 |
+| 0 ms latency (paired gain) | **+$3.46 ± 1.79** | **+$9.30 ± 5.31** |
+
+The forward-filtered HMM measurably cuts adverse-selection losses on both venues; the imbalance
+skew doesn't; zero latency reaches ~breakeven. Nothing is profitable at 50 ms, which is the honest
+answer for a retail-speed quoter on a 1-tick market.
 
 ## Run
 ```
