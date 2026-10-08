@@ -226,3 +226,23 @@ the 03:24 taskkill 73 s, a few reconnects). Primary config fixed a priori: A-S g
   connection IS served during Kraken's ~10 s midnight stall; we'd been waiting out the close handshake.
   Remaining 2.77 s ≈ 1.0 s capped close + 1.7 s reconnect/subscribe/snapshot. Coinbase: 1.24 s.
   The rollover alert threshold rises from 2 s to 5 s (the ~1 s left isn't worth a connect-before-close rewrite).
+
+## 2026-10-08 — Walk-forward, 9 test days (09-28 .. 10-06; HMM configs 8 days from 09-29)
+
+Mean PnL/day ± 95% t-CI, SOL-USD, queue fills, 0 fees. Paired = minus A-S on the same day.
+| | Coinbase | Kraken |
+|---|---|---|
+| touch | −211.40 ± 103.74 | −246.25 ± 85.97 |
+| A-S (gamma 3, 50 ms) | −3.60 ± 2.49 | −8.79 ± 5.87 |
+| +HMM widen, paired | **+1.47 ± 0.89** | **+3.17 ± 2.16** |
+| +skew, paired | +0.08 ± 1.07 | +0.61 ± 1.30 |
+| 0 ms latency, paired | **+3.46 ± 1.79** | **+9.30 ± 5.31** |
+| A-S @ 0 ms, total | −0.15 ± 2.67 | +0.51 ± 1.23 |
+
+- Nothing is profitable at 50 ms: the A-S CI is below 0 on both venues.
+- **HMM regime widening (forward-filtered, K=3 fixed a priori) reduces losses on both venues**, with CIs
+  excluding 0. It cuts adverse selection, not to profit. The strongest finding so far.
+- The imbalance skew has no effect: the 09-28 single-day "+$0.7" was noise.
+- Latency is the largest lever, but 0 ms only reaches ~breakeven.
+- Caveats: 8–9 days; 10 comparisons at 95% (the same sign on both venues lowers the fluke risk);
+  one asset; 0 fees; our recorded view of the book stands in for the exchange's.
