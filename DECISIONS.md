@@ -31,7 +31,7 @@ Every choice, bug, surprise and dead end. This is the interview material.
 - **First hour: 447,142/447,142 Kraken checksums matched, 0 crossed books, 0 reconnects.**
 - **check.py streams file by file.** The whole-day `to_pydict()` version would have needed ~15 GB
   RAM on a shared machine. Streaming peaks at 84 MiB.
-- **Bug (caught by the desktop session): checking one day started from an empty book.** Unless the
+- **Bug (caught on the desktop): checking one day started from an empty book.** Unless the
   day began with a reconnect, the book was wrong and Kraken checksums failed (7,523/9,441), a false
   alarm on healthy data. Fix: the recorder reconnects at 00:00 UTC, so every day starts with a snapshot
   and is self-contained for the backtester too (~1 s/day cost). check.py now skips and reports any
@@ -172,12 +172,12 @@ Every choice, bug, surprise and dead end. This is the interview material.
 - 18:34–18:40 CDT: the desktop BSOD'd (0x119 VIDEO_SCHEDULER_INTERNAL_ERROR, GPU driver), 6.8 min
   gap. The recorder came back only because someone logged in: the case for the "run without login"
   task. Unflushed rows (up to 60 s) are lost in a crash by design.
-- **Kraken's 12 s rollover gap, root-caused (desktop session, 2026-09-29):** Kraken data flows until
+- **Kraken's 12 s rollover gap, root-caused (on the desktop, 2026-09-29):** Kraken data flows until
   23:59:59.98, then Kraken stalls ~10 s at 00:00 UTC. The timer fired on time, but our close handshake
   waited websockets' default close_timeout (10 s) before reconnecting. A control close outside midnight
   takes 0.14 s. Fix: close_timeout=1. Next night shows whether a new connection gets served during the
   stall (gap ~2–3 s) or Kraken is simply unavailable then (gap stays ~10 s → document it and accept it).
-- **Root cause of both 09-28 recorder "crashes" (desktop forensics):** another Claude session on the same
+- **Root cause of both 09-28 recorder "crashes" (desktop forensics):** another job on the same
   PC (SCD molecular dynamics work) ran `taskkill /IM python.exe /F` (03:24, killed every Python), then later
   killed PID 38724 thinking it was its own hung MD job (21:01); it was our recorder. Not a recorder bug:
   rc 1 = taskkill's exit code, no Application Error/WER event. The supervisor recovered both times in
